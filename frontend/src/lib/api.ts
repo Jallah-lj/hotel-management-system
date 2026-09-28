@@ -86,7 +86,7 @@ function csrfToken() {
 const AUTH_PATHS = new Set(['/auth/login', '/auth/refresh', '/auth/demo-login'])
 
 function authDebug(message: string, details?: Record<string, unknown>) {
-  if (import.meta.env.DEV) console.info(`[AUTH] ${message}`, details ?? '')
+  if (isPreviewHost()) console.info(`[AUTH] ${message}`, details ?? '')
 }
 
 export async function api<T>(path: string, options: RequestInit = {}, allowRefresh = true): Promise<T> {

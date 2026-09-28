@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { Activity, AlertTriangle, ArrowDownRight, ArrowUpRight, BedDouble, Bell, CalendarDays, Check, ChevronRight, CircleDollarSign, ClipboardCheck, Coffee, FileText, Hotel, House, LayoutDashboard, LogOut, Menu, Moon, MoreHorizontal, PanelLeftClose, Plus, Receipt, Search, Settings, ShieldCheck, Sparkles, UserRound, Users, Wrench, X } from 'lucide-react'
-import { ApiRequestError, api, clearSession, Dashboard, Guest, Page, Payment, rememberUser, rememberedUser, Reservation, Room, Service, Task, Ticket, User } from './lib/api'
+import { ApiRequestError, api, clearSession, Dashboard, Guest, isPreviewHost, Page, Payment, rememberUser, rememberedUser, Reservation, Room, Service, Task, Ticket, User } from './lib/api'
 
 const money = (value: string | number | undefined) => `${Number(value ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 const pretty = (value: string) => value.replaceAll('_', ' ').replace(/\b\w/g, (c) => c.toUpperCase())
@@ -15,7 +15,7 @@ function Login({ onLogin }: { onLogin: (user: User) => void }) {
 
   async function submit(event: React.FormEvent) {
     event.preventDefault(); setError('')
-    if (import.meta.env.DEV) console.info('[AUTH] login form submitted')
+    if (isPreviewHost()) console.info('[AUTH] login form submitted')
     if (!email.trim() || !password) {
       setError('Enter your work email and password to continue.')
       return
@@ -23,13 +23,13 @@ function Login({ onLogin }: { onLogin: (user: User) => void }) {
     setBusy(true)
     try {
       const response = await api<{ user: User; access_token?: string }>('/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) })
-      if (import.meta.env.DEV) console.info('[AUTH] login accepted', { email: response.user.email, hasAccessToken: Boolean(response.access_token) })
+      if (isPreviewHost()) console.info('[AUTH] login accepted', { email: response.user.email, hasAccessToken: Boolean(response.access_token) })
       // Verify the exact credential returned by this login before changing
       // routes. This avoids any storage/cookie race between login and /me.
       const verified = await api<User>('/auth/me', response.access_token ? { headers: { Authorization: `Bearer ${response.access_token}` } } : {})
-      if (import.meta.env.DEV) console.info('[AUTH] post-login /me verified', { email: verified.email })
+      if (isPreviewHost()) console.info('[AUTH] post-login /me verified', { email: verified.email })
       onLogin(verified)
-    } catch (e) { if (import.meta.env.DEV) console.info('[AUTH] login failed', { message: e instanceof Error ? e.message : 'unknown error' }); setError(e instanceof Error ? e.message : 'Unable to sign in') }
+    } catch (e) { if (isPreviewHost()) console.info('[AUTH] login failed', { message: e instanceof Error ? e.message : 'unknown error' }); setError(e instanceof Error ? e.message : 'Unable to sign in') }
     finally { setBusy(false) }
   }
   return <main className="login-page">
@@ -55,20 +55,20 @@ function App() {
     let cancelled = false
     bootstrapController.current = controller
     const bootstrap = async () => {
-      if (import.meta.env.DEV) console.info('[AUTH] restoring session')
+      if (isPreviewHost()) console.info('[AUTH] restoring session')
       try {
         const verified = await api<User>('/auth/me', { signal: controller.signal })
         if (cancelled) return
-        if (import.meta.env.DEV) console.info('[AUTH] session restored', { email: verified.email })
+        if (isPreviewHost()) console.info('[AUTH] session restored', { email: verified.email })
         rememberUser(verified)
         setUser(verified)
         setAuthError('')
       } catch (error) {
         if (cancelled || controller.signal.aborted) {
-          if (import.meta.env.DEV) console.info('[AUTH] stale session restore cancelled')
+          if (isPreviewHost()) console.info('[AUTH] stale session restore cancelled')
           return
         }
-        if (import.meta.env.DEV) console.info('[AUTH] session restore failed', { status: error instanceof ApiRequestError ? error.status : 0, message: error instanceof Error ? error.message : 'unknown error' })
+        if (isPreviewHost()) console.info('[AUTH] session restore failed', { status: error instanceof ApiRequestError ? error.status : 0, message: error instanceof Error ? error.message : 'unknown error' })
         if (error instanceof ApiRequestError && error.status === 401) {
           clearSession()
           setUser(null)
@@ -96,7 +96,7 @@ function App() {
     rememberUser(loggedInUser)
     setAuthError('')
     setUser(loggedInUser)
-    if (import.meta.env.DEV) console.info('[AUTH] navigating to /dashboard')
+    if (isPreviewHost()) console.info('[AUTH] navigating to /dashboard')
     navigate('/dashboard', { replace: true })
   }
   const handleLogout = () => {
