@@ -12,6 +12,12 @@ const proxy = {
   },
 }
 
+const noCacheHeaders = {
+  'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+  Pragma: 'no-cache',
+  Expires: '0',
+}
+
 export default defineConfig({
   plugins: [react()],
   server: {
@@ -19,6 +25,7 @@ export default defineConfig({
     port: 5173,
     strictPort: true,
     allowedHosts: true,
+    headers: noCacheHeaders,
     proxy,
   },
   // Keep the exact same API proxy when the built frontend is served through
@@ -28,6 +35,7 @@ export default defineConfig({
     host: '0.0.0.0',
     port: 5173,
     strictPort: true,
+    headers: noCacheHeaders,
     proxy,
   },
 })
