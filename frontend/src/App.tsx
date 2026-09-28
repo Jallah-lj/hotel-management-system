@@ -37,15 +37,10 @@ function Login({ onLogin }: { onLogin: (user: User) => void }) {
     try {
       const response = await api<{ user: User; access_token?: string }>('/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) })
       if (isPreviewHost()) console.info('[AUTH] login accepted', { email: response.user.email, hasAccessToken: Boolean(response.access_token) })
-      // The preview has already received the real backend-issued credential;
-      // let the dashboard make the authenticated API request directly. Keep
-      // the additional /me verification for production deployments.
-      if (isPreviewHost()) {
-        onLogin(response.user)
-        return
-      }
-      const verified = await api<User>('/auth/me', response.access_token ? { headers: { Authorization: `Bearer ${response.access_token}` } } : {})
-      onLogin(verified)
+      // The backend has already authenticated this credential. The dashboard
+      // API performs the next authenticated request; do not introduce a
+      // second login-time request that can race cookie/session restoration.
+      onLogin(response.user)
     } catch (e) { if (isPreviewHost()) console.info('[AUTH] login failed', { message: e instanceof Error ? e.message : 'unknown error' }); setError(loginErrorMessage(e)) }
     finally { setBusy(false) }
   }
