@@ -15,13 +15,14 @@ function Login({ onLogin }: { onLogin: (user: User) => void }) {
 
   async function submit(event: React.FormEvent) {
     event.preventDefault(); setError('')
+    if (import.meta.env.DEV) console.info('[AUTH] login form submitted')
     if (!email.trim() || !password) {
       setError('Enter your work email and password to continue.')
       return
     }
     setBusy(true)
-    try { const response = await api<{ user: User }>('/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) }); onLogin(response.user) }
-    catch (e) { setError(e instanceof Error ? e.message : 'Unable to sign in') }
+    try { const response = await api<{ user: User }>('/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) }); if (import.meta.env.DEV) console.info('[AUTH] login accepted', { email: response.user.email }); onLogin(response.user) }
+    catch (e) { if (import.meta.env.DEV) console.info('[AUTH] login failed', { message: e instanceof Error ? e.message : 'unknown error' }); setError(e instanceof Error ? e.message : 'Unable to sign in') }
     finally { setBusy(false) }
   }
   return <main className="login-page">
@@ -43,12 +44,15 @@ function App() {
   const [authError, setAuthError] = useState('')
   useEffect(() => {
     const bootstrap = async () => {
+      if (import.meta.env.DEV) console.info('[AUTH] restoring session')
       try {
         const verified = await api<User>('/auth/me')
+        if (import.meta.env.DEV) console.info('[AUTH] session restored', { email: verified.email })
         rememberUser(verified)
         setUser(verified)
         setAuthError('')
       } catch (error) {
+        if (import.meta.env.DEV) console.info('[AUTH] session restore failed', { status: error instanceof ApiRequestError ? error.status : 0, message: error instanceof Error ? error.message : 'unknown error' })
         if (error instanceof ApiRequestError && error.status === 401) {
           clearSession()
           setUser(null)
@@ -68,6 +72,7 @@ function App() {
     rememberUser(loggedInUser)
     setAuthError('')
     setUser(loggedInUser)
+    if (import.meta.env.DEV) console.info('[AUTH] navigating to /dashboard')
     navigate('/dashboard', { replace: true })
   }
   const handleLogout = () => {

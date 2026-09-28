@@ -85,6 +85,10 @@ function csrfToken() {
 
 const AUTH_PATHS = new Set(['/auth/login', '/auth/refresh', '/auth/demo-login'])
 
+function authDebug(message: string, details?: Record<string, unknown>) {
+  if (import.meta.env.DEV) console.info(`[AUTH] ${message}`, details ?? '')
+}
+
 export async function api<T>(path: string, options: RequestInit = {}, allowRefresh = true): Promise<T> {
   const method = (options.method ?? 'GET').toUpperCase()
   const headers = new Headers(options.headers)
@@ -96,12 +100,15 @@ export async function api<T>(path: string, options: RequestInit = {}, allowRefre
     if (csrf) headers.set('X-CSRF-Token', decodeURIComponent(csrf))
   }
 
+  authDebug('request', { method, path, hasBearer: Boolean(accessToken), allowRefresh })
   let res: Response
   try {
     res = await fetch(`${API}${path}`, { ...options, headers, credentials: 'include' })
   } catch {
+    authDebug('network failure', { method, path })
     throw new ApiNetworkError()
   }
+  authDebug('response', { method, path, status: res.status })
 
   if (res.status === 401 && !AUTH_PATHS.has(path)) {
     if (allowRefresh) {
@@ -110,15 +117,18 @@ export async function api<T>(path: string, options: RequestInit = {}, allowRefre
       // from creating an infinite request/redirect loop.
       try {
         const refreshed = await fetch(`${API}/auth/refresh`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include' })
+        authDebug('refresh response', { status: refreshed.status })
         if (refreshed.ok) {
           const session = await refreshed.json() as { access_token?: string }
           setAccessToken(session.access_token ?? null)
+          authDebug('refresh credential stored', { hasAccessToken: Boolean(session.access_token) })
           return api<T>(path, options, false)
         }
       } catch {
         // The original request remains an authentication failure below.
       }
     }
+    authDebug('session rejected; clearing client session', { path })
     clearSession()
     window.dispatchEvent(new CustomEvent('hms:unauthorized'))
   }
@@ -131,7 +141,10 @@ export async function api<T>(path: string, options: RequestInit = {}, allowRefre
   }
   if (res.status === 204) return undefined as T
   const payload = await res.json() as T & { access_token?: string }
-  if (AUTH_PATHS.has(path)) setAccessToken(payload.access_token ?? null)
+  if (AUTH_PATHS.has(path)) {
+    setAccessToken(payload.access_token ?? null)
+    authDebug('credential stored', { path, hasAccessToken: Boolean(payload.access_token) })
+  }
   return payload as T
 }
 
