@@ -1,5 +1,19 @@
 export type ApiError = { error?: { code?: string; message?: string; details?: unknown } }
 
+export class ApiRequestError extends Error {
+  constructor(public readonly status: number, public readonly code: string, message: string) {
+    super(message)
+    this.name = 'ApiRequestError'
+  }
+}
+
+export class ApiNetworkError extends Error {
+  constructor() {
+    super('Unable to connect to the hotel server.')
+    this.name = 'ApiNetworkError'
+  }
+}
+
 const API = '/api/v1'
 const SESSION_TOKEN_KEY = 'hms_access_token'
 
@@ -69,7 +83,9 @@ function csrfToken() {
   return document.cookie.split('; ').find((part) => part.startsWith('hms_csrf='))?.split('=')[1]
 }
 
-export async function api<T>(path: string, options: RequestInit = {}): Promise<T> {
+const AUTH_PATHS = new Set(['/auth/login', '/auth/refresh', '/auth/demo-login'])
+
+export async function api<T>(path: string, options: RequestInit = {}, allowRefresh = true): Promise<T> {
   const method = (options.method ?? 'GET').toUpperCase()
   const headers = new Headers(options.headers)
   if (options.body && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json')
@@ -79,27 +95,41 @@ export async function api<T>(path: string, options: RequestInit = {}): Promise<T
     const csrf = csrfToken()
     if (csrf) headers.set('X-CSRF-Token', decodeURIComponent(csrf))
   }
-  const res = await fetch(`${API}${path}`, { ...options, headers, credentials: 'include' })
-  if (res.status === 401 && !['/auth/login', '/auth/refresh', '/auth/demo-login'].includes(path)) {
-    // Access tokens are intentionally short-lived. Rotate the HttpOnly refresh
-    // session once before sending the user back to the login screen.
-    const refreshed = await fetch(`${API}/auth/refresh`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include' })
-    if (refreshed.ok) {
-      const session = await refreshed.json() as { access_token?: string }
-      setAccessToken(session.access_token ?? null)
-      return api<T>(path, options)
+
+  let res: Response
+  try {
+    res = await fetch(`${API}${path}`, { ...options, headers, credentials: 'include' })
+  } catch {
+    throw new ApiNetworkError()
+  }
+
+  if (res.status === 401 && allowRefresh && !AUTH_PATHS.has(path)) {
+    // Access tokens are intentionally short-lived. Rotate the refresh session
+    // at most once; a bounded retry prevents an invalid refresh configuration
+    // from creating an infinite request/redirect loop.
+    try {
+      const refreshed = await fetch(`${API}/auth/refresh`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include' })
+      if (refreshed.ok) {
+        const session = await refreshed.json() as { access_token?: string }
+        setAccessToken(session.access_token ?? null)
+        return api<T>(path, options, false)
+      }
+    } catch {
+      // The original request remains an authentication failure below.
     }
     clearSession()
     window.dispatchEvent(new CustomEvent('hms:unauthorized'))
   }
+
   if (!res.ok) {
     let payload: ApiError = {}
     try { payload = await res.json() } catch { /* non-json error */ }
-    throw new Error(payload.error?.message ?? `Request failed (${res.status})`)
+    const code = payload.error?.code ?? (res.status === 401 ? 'not_authenticated' : res.status === 403 ? 'permission_denied' : 'request_failed')
+    throw new ApiRequestError(res.status, code, payload.error?.message ?? `Request failed (${res.status})`)
   }
   if (res.status === 204) return undefined as T
   const payload = await res.json() as T & { access_token?: string }
-  if (path === '/auth/login' || path === '/auth/refresh' || path === '/auth/demo-login') setAccessToken(payload.access_token ?? null)
+  if (AUTH_PATHS.has(path)) setAccessToken(payload.access_token ?? null)
   return payload as T
 }
 

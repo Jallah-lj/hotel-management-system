@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { Activity, AlertTriangle, ArrowDownRight, ArrowUpRight, BedDouble, Bell, CalendarDays, Check, ChevronRight, CircleDollarSign, ClipboardCheck, Coffee, FileText, Hotel, House, LayoutDashboard, LogOut, Menu, Moon, MoreHorizontal, PanelLeftClose, Plus, Receipt, Search, Settings, ShieldCheck, Sparkles, UserRound, Users, Wrench, X } from 'lucide-react'
-import { api, clearSession, Dashboard, Guest, isPreviewHost, Page, Payment, rememberUser, rememberedUser, Reservation, Room, Service, Task, Ticket, User } from './lib/api'
+import { ApiRequestError, api, clearSession, Dashboard, Guest, isPreviewHost, Page, Payment, rememberUser, rememberedUser, Reservation, Room, Service, Task, Ticket, User } from './lib/api'
 
 const money = (value: string | number | undefined) => `${Number(value ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 const pretty = (value: string) => value.replaceAll('_', ' ').replace(/\b\w/g, (c) => c.toUpperCase())
@@ -46,44 +46,64 @@ function Login({ onLogin }: { onLogin: (user: User) => void }) {
 }
 
 type NavItem = { label: string; icon: React.ElementType; to: string; permission?: string }
-const primaryNav: NavItem[] = [{ label: 'Overview', icon: LayoutDashboard, to: '/' }, { label: 'Reservations', icon: CalendarDays, to: '/reservations' }, { label: 'Guests', icon: Users, to: '/guests' }, { label: 'Rooms & rates', icon: BedDouble, to: '/rooms' }]
+const primaryNav: NavItem[] = [{ label: 'Overview', icon: LayoutDashboard, to: '/dashboard' }, { label: 'Reservations', icon: CalendarDays, to: '/reservations' }, { label: 'Guests', icon: Users, to: '/guests' }, { label: 'Rooms & rates', icon: BedDouble, to: '/rooms' }]
 const operationsNav: NavItem[] = [{ label: 'Housekeeping', icon: Sparkles, to: '/housekeeping' }, { label: 'Maintenance', icon: Wrench, to: '/maintenance' }, { label: 'Services & dining', icon: Coffee, to: '/services' }]
 const financeNav: NavItem[] = [{ label: 'Payments', icon: CircleDollarSign, to: '/finance' }, { label: 'Reports', icon: FileText, to: '/reports' }]
 
 function App() {
   const cachedUser = rememberedUser()
+  const navigate = useNavigate()
   const [user, setUser] = useState<User | null>(cachedUser)
-  const [checking, setChecking] = useState(!cachedUser)
+  const [checking, setChecking] = useState(true)
+  const [authError, setAuthError] = useState('')
   useEffect(() => {
     const bootstrap = async () => {
       try {
         const verified = await api<User>('/auth/me')
         rememberUser(verified)
         setUser(verified)
-      } catch {
-        clearSession()
-        setUser(null)
+        setAuthError('')
+      } catch (error) {
+        if (error instanceof ApiRequestError && error.status === 401) {
+          clearSession()
+          setUser(null)
+        } else {
+          setAuthError(error instanceof Error ? error.message : 'Unable to verify your hotel session.')
+        }
       } finally {
         setChecking(false)
       }
     }
-    const logout = () => { clearSession(); setUser(null) }
+    const logout = () => { clearSession(); setUser(null); setAuthError('') }
     window.addEventListener('hms:unauthorized', logout)
     void bootstrap()
     return () => window.removeEventListener('hms:unauthorized', logout)
   }, [])
-  const handleLogin = (loggedInUser: User) => { rememberUser(loggedInUser); setUser(loggedInUser) }
+  const handleLogin = (loggedInUser: User) => {
+    rememberUser(loggedInUser)
+    setAuthError('')
+    setUser(loggedInUser)
+    navigate('/dashboard', { replace: true })
+  }
+  const handleLogout = () => {
+    api('/auth/logout', { method: 'POST' }).finally(() => {
+      clearSession()
+      setUser(null)
+      navigate('/login', { replace: true })
+    })
+  }
   if (checking) return <div className="app-loading"><div className="brand-loader"><Hotel size={22} /><span>AURORA GRAND</span></div><span className="spinner dark" /></div>
+  if (authError) return <ErrorState message={authError} />
   if (!user) return <Login onLogin={handleLogin} />
-  return <AppShell user={user} onLogout={() => { api('/auth/logout', { method: 'POST' }).finally(() => { clearSession(); setUser(null) }) }} />
+  return <AppShell user={user} onLogout={handleLogout} />
 }
 
 function AppShell({ user, onLogout }: { user: User; onLogout: () => void }) {
   const [sidebar, setSidebar] = useState(true)
   const [mobileOpen, setMobileOpen] = useState(false)
   const location = useLocation()
-  const title = location.pathname === '/' ? 'Good morning, Avery' : pretty(location.pathname.slice(1).split('/')[0])
-  return <div className={`app-shell ${sidebar ? '' : 'sidebar-collapsed'}`}><aside className={`sidebar ${mobileOpen ? 'mobile-open' : ''}`}><div className="sidebar-top"><div className="brand"><span className="brand-icon"><Hotel size={18} /></span><span className="brand-text">AURORA <b>GRAND</b></span></div><button className="icon-button sidebar-close" onClick={() => setMobileOpen(false)}><X size={18} /></button></div><div className="property-switch"><span className="property-dot" /><div><strong>Aurora Grand Hotel</strong><small>Operations workspace</small></div><ChevronRight size={14} /></div><nav><NavSection label="WORKSPACE" items={primaryNav} onNavigate={() => setMobileOpen(false)} /><NavSection label="OPERATIONS" items={operationsNav} onNavigate={() => setMobileOpen(false)} /><NavSection label="FINANCE" items={financeNav} onNavigate={() => setMobileOpen(false)} /></nav><div className="sidebar-bottom"><NavLink to="/settings" className="nav-item" onClick={() => setMobileOpen(false)}><Settings size={17} /><span>Settings</span></NavLink><div className="user-mini"><div className="avatar">{user.first_name[0]}{user.last_name[0]}</div><div className="user-mini-copy"><strong>{user.full_name}</strong><small>{user.roles[0]?.name ?? 'Staff'}</small></div><button className="icon-button" onClick={onLogout} title="Sign out"><LogOut size={16} /></button></div></div></aside><div className="main-area"><header className="topbar"><div className="topbar-left"><button className="icon-button menu-toggle" onClick={() => setMobileOpen(true)}><Menu size={20} /></button><button className="icon-button collapse-toggle" onClick={() => setSidebar((v) => !v)}><PanelLeftClose size={19} /></button><div className="breadcrumb"><span>Workspace</span><ChevronRight size={14} /><strong>{title}</strong></div></div><div className="topbar-actions"><div className="topbar-date"><CalendarDays size={15} /><span>Monday, Sep 28, 2026</span></div><button className="icon-button notification-button"><Bell size={18} /><i /></button><div className="avatar avatar-top">{user.first_name[0]}{user.last_name[0]}</div></div></header><main className="content"><Routes><Route path="/" element={<DashboardPage />} /><Route path="/reservations" element={<ReservationsPage />} /><Route path="/guests" element={<GuestsPage />} /><Route path="/rooms" element={<RoomsPage />} /><Route path="/housekeeping" element={<HousekeepingPage />} /><Route path="/maintenance" element={<MaintenancePage />} /><Route path="/services" element={<ServicesPage />} /><Route path="/finance" element={<FinancePage />} /><Route path="/reports" element={<ReportsPage />} /><Route path="/settings" element={<SettingsPage />} /><Route path="*" element={<DashboardPage />} /></Routes></main></div></div>
+  const title = location.pathname === '/' || location.pathname === '/dashboard' ? 'Good morning, Avery' : pretty(location.pathname.slice(1).split('/')[0])
+  return <div className={`app-shell ${sidebar ? '' : 'sidebar-collapsed'}`}><aside className={`sidebar ${mobileOpen ? 'mobile-open' : ''}`}><div className="sidebar-top"><div className="brand"><span className="brand-icon"><Hotel size={18} /></span><span className="brand-text">AURORA <b>GRAND</b></span></div><button className="icon-button sidebar-close" onClick={() => setMobileOpen(false)}><X size={18} /></button></div><div className="property-switch"><span className="property-dot" /><div><strong>Aurora Grand Hotel</strong><small>Operations workspace</small></div><ChevronRight size={14} /></div><nav><NavSection label="WORKSPACE" items={primaryNav} onNavigate={() => setMobileOpen(false)} /><NavSection label="OPERATIONS" items={operationsNav} onNavigate={() => setMobileOpen(false)} /><NavSection label="FINANCE" items={financeNav} onNavigate={() => setMobileOpen(false)} /></nav><div className="sidebar-bottom"><NavLink to="/settings" className="nav-item" onClick={() => setMobileOpen(false)}><Settings size={17} /><span>Settings</span></NavLink><div className="user-mini"><div className="avatar">{user.first_name[0]}{user.last_name[0]}</div><div className="user-mini-copy"><strong>{user.full_name}</strong><small>{user.roles[0]?.name ?? 'Staff'}</small></div><button className="icon-button" onClick={onLogout} title="Sign out"><LogOut size={16} /></button></div></div></aside><div className="main-area"><header className="topbar"><div className="topbar-left"><button className="icon-button menu-toggle" onClick={() => setMobileOpen(true)}><Menu size={20} /></button><button className="icon-button collapse-toggle" onClick={() => setSidebar((v) => !v)}><PanelLeftClose size={19} /></button><div className="breadcrumb"><span>Workspace</span><ChevronRight size={14} /><strong>{title}</strong></div></div><div className="topbar-actions"><div className="topbar-date"><CalendarDays size={15} /><span>Monday, Sep 28, 2026</span></div><button className="icon-button notification-button"><Bell size={18} /><i /></button><div className="avatar avatar-top">{user.first_name[0]}{user.last_name[0]}</div></div></header><main className="content"><Routes><Route path="/" element={<DashboardPage />} /><Route path="/dashboard" element={<DashboardPage />} /><Route path="/reservations" element={<ReservationsPage />} /><Route path="/guests" element={<GuestsPage />} /><Route path="/rooms" element={<RoomsPage />} /><Route path="/housekeeping" element={<HousekeepingPage />} /><Route path="/maintenance" element={<MaintenancePage />} /><Route path="/services" element={<ServicesPage />} /><Route path="/finance" element={<FinancePage />} /><Route path="/reports" element={<ReportsPage />} /><Route path="/settings" element={<SettingsPage />} /><Route path="*" element={<DashboardPage />} /></Routes></main></div></div>
 }
 
 function NavSection({ label, items, onNavigate }: { label: string; items: NavItem[]; onNavigate: () => void }) { return <div className="nav-section"><span className="nav-label">{label}</span>{items.map(({ label: itemLabel, icon: Icon, to }) => <NavLink key={to} to={to} className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`} onClick={onNavigate}><Icon size={17} /><span>{itemLabel}</span></NavLink>)}</div> }
