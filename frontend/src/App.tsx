@@ -48,6 +48,16 @@ function App() {
         rememberUser(verified)
         setUser(verified)
       } catch {
+        if (isPreviewHost()) {
+          try {
+            const demo = await api<{ user: User }>('/auth/demo-login', { method: 'POST' })
+            rememberUser(demo.user)
+            setUser(demo.user)
+            return
+          } catch {
+            // Fall through to the normal sign-in screen if the preview API is unavailable.
+          }
+        }
         if (!cachedUser) setUser(null)
       } finally {
         setChecking(false)
