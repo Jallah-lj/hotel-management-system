@@ -103,19 +103,21 @@ export async function api<T>(path: string, options: RequestInit = {}, allowRefre
     throw new ApiNetworkError()
   }
 
-  if (res.status === 401 && allowRefresh && !AUTH_PATHS.has(path)) {
-    // Access tokens are intentionally short-lived. Rotate the refresh session
-    // at most once; a bounded retry prevents an invalid refresh configuration
-    // from creating an infinite request/redirect loop.
-    try {
-      const refreshed = await fetch(`${API}/auth/refresh`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include' })
-      if (refreshed.ok) {
-        const session = await refreshed.json() as { access_token?: string }
-        setAccessToken(session.access_token ?? null)
-        return api<T>(path, options, false)
+  if (res.status === 401 && !AUTH_PATHS.has(path)) {
+    if (allowRefresh) {
+      // Access tokens are intentionally short-lived. Rotate the refresh session
+      // at most once; a bounded retry prevents an invalid refresh configuration
+      // from creating an infinite request/redirect loop.
+      try {
+        const refreshed = await fetch(`${API}/auth/refresh`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include' })
+        if (refreshed.ok) {
+          const session = await refreshed.json() as { access_token?: string }
+          setAccessToken(session.access_token ?? null)
+          return api<T>(path, options, false)
+        }
+      } catch {
+        // The original request remains an authentication failure below.
       }
-    } catch {
-      // The original request remains an authentication failure below.
     }
     clearSession()
     window.dispatchEvent(new CustomEvent('hms:unauthorized'))
