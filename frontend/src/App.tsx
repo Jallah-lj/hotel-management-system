@@ -12,6 +12,19 @@ function Login({ onLogin }: { onLogin: (user: User) => void }) {
   const [password, setPassword] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+
+  // If the preview ever reaches this component because bootstrap raced the
+  // API, retry the test-only session here as well. This makes the sandbox
+  // self-healing without requiring a manual sign-in or a hard refresh.
+  useEffect(() => {
+    if (!isPreviewHost()) return
+    let cancelled = false
+    api<{ user: User }>('/auth/demo-login', { method: 'POST' })
+      .then((response) => { if (!cancelled) { rememberUser(response.user); onLogin(response.user) } })
+      .catch(() => undefined)
+    return () => { cancelled = true }
+  }, [])
+
   async function submit(event: React.FormEvent) {
     event.preventDefault(); setBusy(true); setError('')
     try { const response = await api<{ user: User }>('/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) }); onLogin(response.user) }
