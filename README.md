@@ -108,7 +108,7 @@ npm run dev
 
 The staff console is at `http://localhost:5173`. Vite proxies `/api` and `/health` to `127.0.0.1:8000`; browser code only uses relative URLs, so the same build works behind Nginx or a preview proxy.
 
-For an isolated Arena/sandbox preview, run the API with `DEMO_MODE=true`. The preview then automatically signs into the seeded administrator and skips the login gate. This route is disabled by default and rejected in production; do not enable it on a real deployment.
+For an isolated Arena/sandbox preview, run the API with `DEMO_MODE=true`. This keeps the seeded development account available and disables only the test-environment login throttle and lockout; the normal staff login page remains available. The test-only `/api/v1/auth/demo-login` route is disabled by default and rejected in production; do not enable it on a real deployment. For a local HTTP preview, use `COOKIE_SECURE=false` and `COOKIE_SAMESITE=lax`; reserve `COOKIE_SECURE=true` for HTTPS deployments.
 
 ### Development seed accounts
 
