@@ -60,16 +60,21 @@ class AuthService:
                 raise RateLimitError()
         user = self.find_user(identifier)
         now = datetime.now(UTC)
-        if user and user.locked_until and user.locked_until > now:
+        if user and not settings.demo_mode and user.locked_until and user.locked_until > now:
             self._record_attempt(identifier, user, False, ip, user_agent, "locked")
             self.db.commit()
             raise AccountLockedError()
+        if user and settings.demo_mode:
+            # The Arena database is an isolated test workspace; clear stale
+            # lock state so repeated manual test attempts remain usable.
+            user.locked_until = None
+            user.failed_login_count = 0
 
         valid = bool(user and verify_password(password, user.password_hash))
         if not valid:
             if user:
                 user.failed_login_count += 1
-                if user.failed_login_count >= settings.max_failed_logins:
+                if not settings.demo_mode and user.failed_login_count >= settings.max_failed_logins:
                     user.locked_until = now + timedelta(minutes=settings.account_lockout_minutes)
                     user.failed_login_count = 0
             self._record_attempt(identifier, user, False, ip, user_agent, "invalid_credentials")

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { Activity, AlertTriangle, ArrowDownRight, ArrowUpRight, BedDouble, Bell, CalendarDays, Check, ChevronRight, CircleDollarSign, ClipboardCheck, Coffee, FileText, Hotel, House, LayoutDashboard, LogOut, Menu, Moon, MoreHorizontal, PanelLeftClose, Plus, Receipt, Search, Settings, ShieldCheck, Sparkles, UserRound, Users, Wrench, X } from 'lucide-react'
-import { api, clearSession, Dashboard, Guest, isPreviewHost, Page, Payment, rememberUser, rememberedUser, Reservation, Room, Service, Task, Ticket, User } from './lib/api'
+import { api, clearSession, Dashboard, Guest, Page, Payment, rememberUser, rememberedUser, Reservation, Room, Service, Task, Ticket, User } from './lib/api'
 
 const money = (value: string | number | undefined) => `${Number(value ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 const pretty = (value: string) => value.replaceAll('_', ' ').replace(/\b\w/g, (c) => c.toUpperCase())
@@ -12,18 +12,6 @@ function Login({ onLogin }: { onLogin: (user: User) => void }) {
   const [password, setPassword] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-
-  // If the preview ever reaches this component because bootstrap raced the
-  // API, retry the test-only session here as well. This makes the sandbox
-  // self-healing without requiring a manual sign-in or a hard refresh.
-  useEffect(() => {
-    if (!isPreviewHost()) return
-    let cancelled = false
-    api<{ user: User }>('/auth/demo-login', { method: 'POST' })
-      .then((response) => { if (!cancelled) { rememberUser(response.user); onLogin(response.user) } })
-      .catch(() => undefined)
-    return () => { cancelled = true }
-  }, [])
 
   async function submit(event: React.FormEvent) {
     event.preventDefault(); setBusy(true); setError('')
@@ -49,29 +37,12 @@ function App() {
   useEffect(() => {
     const bootstrap = async () => {
       try {
-        // Arena's isolated preview is a test workspace, so it uses the
-        // server-side demo session instead of presenting a login gate.
-        if (!cachedUser && isPreviewHost()) {
-          const demo = await api<{ user: User }>('/auth/demo-login', { method: 'POST' })
-          rememberUser(demo.user)
-          setUser(demo.user)
-          return
-        }
         const verified = await api<User>('/auth/me')
         rememberUser(verified)
         setUser(verified)
       } catch {
-        if (isPreviewHost()) {
-          try {
-            const demo = await api<{ user: User }>('/auth/demo-login', { method: 'POST' })
-            rememberUser(demo.user)
-            setUser(demo.user)
-            return
-          } catch {
-            // Fall through to the normal sign-in screen if the preview API is unavailable.
-          }
-        }
-        if (!cachedUser) setUser(null)
+        clearSession()
+        setUser(null)
       } finally {
         setChecking(false)
       }
