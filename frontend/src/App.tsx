@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { Activity, AlertTriangle, ArrowDownRight, ArrowUpRight, BedDouble, Bell, CalendarDays, Check, ChevronRight, CircleDollarSign, ClipboardCheck, Coffee, FileText, Hotel, House, LayoutDashboard, LogOut, Menu, Moon, MoreHorizontal, PanelLeftClose, Plus, Receipt, Search, Settings, ShieldCheck, Sparkles, UserRound, Users, Wrench, X } from 'lucide-react'
@@ -49,16 +49,25 @@ function App() {
   const [user, setUser] = useState<User | null>(cachedUser)
   const [checking, setChecking] = useState(true)
   const [authError, setAuthError] = useState('')
+  const bootstrapController = useRef<AbortController | null>(null)
   useEffect(() => {
+    const controller = new AbortController()
+    let cancelled = false
+    bootstrapController.current = controller
     const bootstrap = async () => {
       if (import.meta.env.DEV) console.info('[AUTH] restoring session')
       try {
-        const verified = await api<User>('/auth/me')
+        const verified = await api<User>('/auth/me', { signal: controller.signal })
+        if (cancelled) return
         if (import.meta.env.DEV) console.info('[AUTH] session restored', { email: verified.email })
         rememberUser(verified)
         setUser(verified)
         setAuthError('')
       } catch (error) {
+        if (cancelled || controller.signal.aborted) {
+          if (import.meta.env.DEV) console.info('[AUTH] stale session restore cancelled')
+          return
+        }
         if (import.meta.env.DEV) console.info('[AUTH] session restore failed', { status: error instanceof ApiRequestError ? error.status : 0, message: error instanceof Error ? error.message : 'unknown error' })
         if (error instanceof ApiRequestError && error.status === 401) {
           clearSession()
@@ -67,15 +76,23 @@ function App() {
           setAuthError(error instanceof Error ? error.message : 'Unable to verify your hotel session.')
         }
       } finally {
-        setChecking(false)
+        if (!cancelled) setChecking(false)
       }
     }
     const logout = () => { clearSession(); setUser(null); setAuthError('') }
     window.addEventListener('hms:unauthorized', logout)
     void bootstrap()
-    return () => window.removeEventListener('hms:unauthorized', logout)
+    return () => {
+      cancelled = true
+      controller.abort()
+      if (bootstrapController.current === controller) bootstrapController.current = null
+      window.removeEventListener('hms:unauthorized', logout)
+    }
   }, [])
   const handleLogin = (loggedInUser: User) => {
+    // A late unauthenticated bootstrap response must never clear this newly
+    // authenticated session.
+    bootstrapController.current?.abort()
     rememberUser(loggedInUser)
     setAuthError('')
     setUser(loggedInUser)
