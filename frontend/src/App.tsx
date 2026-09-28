@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
-import { Activity, AlertTriangle, ArrowDownRight, ArrowUpRight, BedDouble, Bell, CalendarDays, Check, ChevronRight, CircleDollarSign, ClipboardCheck, Coffee, FileText, Hotel, House, LayoutDashboard, LogOut, Menu, Moon, MoreHorizontal, PanelLeftClose, Plus, Receipt, Search, Settings, ShieldCheck, Sparkles, UserRound, Users, Wrench, X } from 'lucide-react'
+import { Activity, AlertTriangle, ArrowDownRight, ArrowUpRight, BedDouble, Bell, CalendarDays, Check, ChevronRight, CircleDollarSign, ClipboardCheck, Coffee, Eye, EyeOff, FileText, Hotel, House, LayoutDashboard, LogOut, Menu, Moon, MoreHorizontal, PanelLeftClose, Plus, Receipt, Search, Settings, ShieldCheck, Sparkles, UserRound, Users, Wrench, X } from 'lucide-react'
 import { ApiRequestError, api, clearSession, Dashboard, Guest, isPreviewHost, Page, Payment, rememberUser, rememberedUser, Reservation, Room, Service, Task, Ticket, User } from './lib/api'
 
 const money = (value: string | number | undefined) => `${Number(value ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
@@ -11,7 +11,20 @@ function Login({ onLogin }: { onLogin: (user: User) => void }) {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [busy, setBusy] = useState(false)
+  const [sandboxBusy, setSandboxBusy] = useState(false)
+  const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
+
+  async function useDevelopmentAccount() {
+    setSandboxBusy(true); setError('')
+    try {
+      const response = await api<{ user: User; access_token?: string }>('/auth/demo-login', { method: 'POST' })
+      const verified = await api<User>('/auth/me', response.access_token ? { headers: { Authorization: `Bearer ${response.access_token}` } } : {})
+      onLogin(verified)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'The development account could not be opened.')
+    } finally { setSandboxBusy(false) }
+  }
 
   async function submit(event: React.FormEvent) {
     event.preventDefault(); setError('')
@@ -34,7 +47,7 @@ function Login({ onLogin }: { onLogin: (user: User) => void }) {
   }
   return <main className="login-page">
     <section className="login-visual"><div className="login-mark"><Hotel size={22} strokeWidth={1.8} /><span>AURORA GRAND</span></div><div className="visual-copy"><span className="eyebrow light">OPERATIONS WORKSPACE</span><h1>Every stay,<br /><em>beautifully</em> handled.</h1><p>A single, calm command center for the people who make every arrival feel effortless.</p></div><div className="visual-foot"><span>EST. 1998</span><span>HARBOR DISTRICT · NEW YORK</span></div></section>
-    <section className="login-form-wrap"><div className="login-form"><div className="mobile-mark"><Hotel size={19} /><span>AURORA GRAND</span></div><span className="eyebrow">STAFF PORTAL</span><h2>Welcome back</h2><p className="muted">Sign in to continue to your hotel workspace.</p><form onSubmit={submit}><label>Work email or username<input autoFocus type="text" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@auroragrand.example" autoComplete="username" /></label><label>Password<div className="password-field"><input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Enter your password" autoComplete="current-password" /><button type="button" className="reveal" aria-label="Password visibility"><MoreHorizontal size={16} /></button></div></label>{error && <div className="form-error"><AlertTriangle size={16} />{error}</div>}<button className="primary-button wide" disabled={busy}>{busy ? <span className="spinner" /> : <><span>Sign in securely</span><ChevronRight size={17} /></>}</button></form><div className="login-help"><ShieldCheck size={15} /><span>Protected with encrypted sessions and role-based access.</span></div></div></section>
+    <section className="login-form-wrap"><div className="login-form"><div className="mobile-mark"><Hotel size={19} /><span>AURORA GRAND</span></div><span className="eyebrow">STAFF PORTAL</span><h2>Welcome back</h2><p className="muted">Sign in to continue to your hotel workspace.</p><form onSubmit={submit}><label>Work email or username<input autoFocus type="text" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@auroragrand.example" autoComplete="username" /></label><label>Password<div className="password-field"><input type={showPassword ? 'text' : 'password'} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Enter your password" autoComplete="current-password" /><button type="button" className="reveal" aria-label={showPassword ? 'Hide password' : 'Show password'} onClick={() => setShowPassword((value) => !value)}>{showPassword ? <EyeOff size={16} /> : <Eye size={16} />}</button></div></label>{error && <div className="form-error"><AlertTriangle size={16} />{error}</div>}<button className="primary-button wide" disabled={busy}>{busy ? <span className="spinner" /> : <><span>Sign in securely</span><ChevronRight size={17} /></>}</button>{isPreviewHost() && <button type="button" className="secondary-button wide sandbox-button" onClick={useDevelopmentAccount} disabled={busy || sandboxBusy}>{sandboxBusy ? <span className="spinner dark" /> : <><span>Use development account</span><ChevronRight size={17} /></>}</button>}</form><div className="login-help"><ShieldCheck size={15} /><span>Protected with encrypted sessions and role-based access.</span></div></div></section>
   </main>
 }
 
