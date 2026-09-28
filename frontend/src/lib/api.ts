@@ -3,16 +3,29 @@ export type ApiError = { error?: { code?: string; message?: string; details?: un
 const API = '/api/v1'
 const SESSION_TOKEN_KEY = 'hms_access_token'
 
+// The first-party production app uses HttpOnly cookies. The preview proxy can
+// be embedded under a different top-level origin, where browser cookie
+// partitioning varies by browser. Keep a short-lived bearer fallback only for
+// local/Arena preview hosts; production domains remain cookie-only.
+function previewStorageEnabled() {
+  return window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' || window.location.hostname.endsWith('.e2b.app')
+}
+
 function getAccessToken() {
-  try { return sessionStorage.getItem(SESSION_TOKEN_KEY) }
-  catch { return null }
+  try {
+    return sessionStorage.getItem(SESSION_TOKEN_KEY) || (previewStorageEnabled() ? localStorage.getItem(SESSION_TOKEN_KEY) : null)
+  } catch { return null }
 }
 
 function setAccessToken(token: string | null) {
   try {
     if (token) sessionStorage.setItem(SESSION_TOKEN_KEY, token)
     else sessionStorage.removeItem(SESSION_TOKEN_KEY)
-  } catch { /* sessionStorage may be unavailable in hardened browsers */ }
+    if (previewStorageEnabled()) {
+      if (token) localStorage.setItem(SESSION_TOKEN_KEY, token)
+      else localStorage.removeItem(SESSION_TOKEN_KEY)
+    }
+  } catch { /* storage may be unavailable in hardened browsers */ }
 }
 
 export function clearSession() { setAccessToken(null) }
