@@ -3,6 +3,11 @@ export type ApiError = { error?: { code?: string; message?: string; details?: un
 const API = '/api/v1'
 const SESSION_TOKEN_KEY = 'hms_access_token'
 
+// Keep an in-memory copy as a final fallback for embedded previews where
+// browser storage is disabled by iframe/privacy policy. A successful login
+// must remain usable for the current page even when cookies and storage are
+// unavailable.
+
 // The first-party production app uses HttpOnly cookies. The preview proxy can
 // be embedded under a different top-level origin, where browser cookie
 // partitioning varies by browser. Keep a short-lived bearer fallback only for
@@ -17,13 +22,16 @@ function previewStorageEnabled() {
   return isPreviewHost()
 }
 
+let memoryAccessToken: string | null = null
+
 function getAccessToken() {
   try {
-    return sessionStorage.getItem(SESSION_TOKEN_KEY) || (previewStorageEnabled() ? localStorage.getItem(SESSION_TOKEN_KEY) : null)
-  } catch { return null }
+    return sessionStorage.getItem(SESSION_TOKEN_KEY) || (previewStorageEnabled() ? localStorage.getItem(SESSION_TOKEN_KEY) : null) || memoryAccessToken
+  } catch { return memoryAccessToken }
 }
 
 function setAccessToken(token: string | null) {
+  memoryAccessToken = token
   try {
     if (token) sessionStorage.setItem(SESSION_TOKEN_KEY, token)
     else sessionStorage.removeItem(SESSION_TOKEN_KEY)
