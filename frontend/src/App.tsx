@@ -21,8 +21,15 @@ function Login({ onLogin }: { onLogin: (user: User) => void }) {
       return
     }
     setBusy(true)
-    try { const response = await api<{ user: User }>('/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) }); if (import.meta.env.DEV) console.info('[AUTH] login accepted', { email: response.user.email }); onLogin(response.user) }
-    catch (e) { if (import.meta.env.DEV) console.info('[AUTH] login failed', { message: e instanceof Error ? e.message : 'unknown error' }); setError(e instanceof Error ? e.message : 'Unable to sign in') }
+    try {
+      const response = await api<{ user: User }>('/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) })
+      if (import.meta.env.DEV) console.info('[AUTH] login accepted', { email: response.user.email })
+      // Verify the exact session that will protect the dashboard before
+      // changing routes. A successful credential response alone is not enough.
+      const verified = await api<User>('/auth/me')
+      if (import.meta.env.DEV) console.info('[AUTH] post-login /me verified', { email: verified.email })
+      onLogin(verified)
+    } catch (e) { if (import.meta.env.DEV) console.info('[AUTH] login failed', { message: e instanceof Error ? e.message : 'unknown error' }); setError(e instanceof Error ? e.message : 'Unable to sign in') }
     finally { setBusy(false) }
   }
   return <main className="login-page">
