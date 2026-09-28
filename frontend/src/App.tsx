@@ -11,7 +11,18 @@ function Login({ onLogin }: { onLogin: (user: User) => void }) {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [busy, setBusy] = useState(false)
+  const [sandboxBusy, setSandboxBusy] = useState(false)
   const [error, setError] = useState('')
+
+  async function openSandboxWorkspace() {
+    setSandboxBusy(true); setError('')
+    try {
+      const response = await api<{ user: User }>('/auth/demo-login', { method: 'POST' })
+      onLogin(response.user)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'The sandbox workspace could not be opened')
+    } finally { setSandboxBusy(false) }
+  }
 
   async function submit(event: React.FormEvent) {
     event.preventDefault(); setBusy(true); setError('')
@@ -21,7 +32,7 @@ function Login({ onLogin }: { onLogin: (user: User) => void }) {
   }
   return <main className="login-page">
     <section className="login-visual"><div className="login-mark"><Hotel size={22} strokeWidth={1.8} /><span>AURORA GRAND</span></div><div className="visual-copy"><span className="eyebrow light">OPERATIONS WORKSPACE</span><h1>Every stay,<br /><em>beautifully</em> handled.</h1><p>A single, calm command center for the people who make every arrival feel effortless.</p></div><div className="visual-foot"><span>EST. 1998</span><span>HARBOR DISTRICT · NEW YORK</span></div></section>
-    <section className="login-form-wrap"><div className="login-form"><div className="mobile-mark"><Hotel size={19} /><span>AURORA GRAND</span></div><span className="eyebrow">STAFF PORTAL</span><h2>Welcome back</h2><p className="muted">Sign in to continue to your hotel workspace.</p><form onSubmit={submit}><label>Work email or username<input autoFocus type="text" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@auroragrand.example" required /></label><label>Password<div className="password-field"><input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Enter your password" required /><button type="button" className="reveal" aria-label="Password visibility"><MoreHorizontal size={16} /></button></div></label>{error && <div className="form-error"><AlertTriangle size={16} />{error}</div>}<button className="primary-button wide" disabled={busy}>{busy ? <span className="spinner" /> : <><span>Sign in securely</span><ChevronRight size={17} /></>}</button></form><div className="login-help"><ShieldCheck size={15} /><span>Protected with encrypted sessions and role-based access.</span></div></div></section>
+    <section className="login-form-wrap"><div className="login-form"><div className="mobile-mark"><Hotel size={19} /><span>AURORA GRAND</span></div><span className="eyebrow">STAFF PORTAL</span><h2>Welcome back</h2><p className="muted">Sign in to continue to your hotel workspace.</p><form onSubmit={submit}><label>Work email or username<input autoFocus type="text" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@auroragrand.example" required /></label><label>Password<div className="password-field"><input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Enter your password" required /><button type="button" className="reveal" aria-label="Password visibility"><MoreHorizontal size={16} /></button></div></label>{error && <div className="form-error"><AlertTriangle size={16} />{error}</div>}<button className="primary-button wide" disabled={busy}>{busy ? <span className="spinner" /> : <><span>Sign in securely</span><ChevronRight size={17} /></>}</button>{import.meta.env.DEV && <button type="button" className="secondary-button wide sandbox-button" onClick={openSandboxWorkspace} disabled={busy || sandboxBusy}>{sandboxBusy ? <span className="spinner dark" /> : <><span>Open sandbox workspace</span><ChevronRight size={17} /></>}</button>}</form><div className="login-help"><ShieldCheck size={15} /><span>Protected with encrypted sessions and role-based access.</span></div></div></section>
   </main>
 }
 
