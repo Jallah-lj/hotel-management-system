@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { Activity, AlertTriangle, ArrowDownRight, ArrowUpRight, BedDouble, Bell, CalendarDays, Check, ChevronRight, CircleDollarSign, ClipboardCheck, Coffee, FileText, Hotel, House, LayoutDashboard, LogOut, Menu, Moon, MoreHorizontal, PanelLeftClose, Plus, Receipt, Search, Settings, ShieldCheck, Sparkles, UserRound, Users, Wrench, X } from 'lucide-react'
-import { api, Dashboard, Guest, Page, Payment, Reservation, Room, Service, Task, Ticket, User } from './lib/api'
+import { api, clearSession, Dashboard, Guest, Page, Payment, Reservation, Room, Service, Task, Ticket, User } from './lib/api'
 
 const money = (value: string | number | undefined) => `${Number(value ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 const pretty = (value: string) => value.replaceAll('_', ' ').replace(/\b\w/g, (c) => c.toUpperCase())
@@ -35,7 +35,7 @@ function App() {
   useEffect(() => { api<User>('/auth/me').then(setUser).catch(() => setUser(null)).finally(() => setChecking(false)); const logout = () => setUser(null); window.addEventListener('hms:unauthorized', logout); return () => window.removeEventListener('hms:unauthorized', logout) }, [])
   if (checking) return <div className="app-loading"><div className="brand-loader"><Hotel size={22} /><span>AURORA GRAND</span></div><span className="spinner dark" /></div>
   if (!user) return <Login onLogin={setUser} />
-  return <AppShell user={user} onLogout={() => { api('/auth/logout', { method: 'POST' }).finally(() => setUser(null)) }} />
+  return <AppShell user={user} onLogout={() => { api('/auth/logout', { method: 'POST' }).finally(() => { clearSession(); setUser(null) }) }} />
 }
 
 function AppShell({ user, onLogout }: { user: User; onLogout: () => void }) {

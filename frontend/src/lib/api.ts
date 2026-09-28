@@ -1,6 +1,21 @@
 export type ApiError = { error?: { code?: string; message?: string; details?: unknown } }
 
 const API = '/api/v1'
+const SESSION_TOKEN_KEY = 'hms_access_token'
+
+function getAccessToken() {
+  try { return sessionStorage.getItem(SESSION_TOKEN_KEY) }
+  catch { return null }
+}
+
+function setAccessToken(token: string | null) {
+  try {
+    if (token) sessionStorage.setItem(SESSION_TOKEN_KEY, token)
+    else sessionStorage.removeItem(SESSION_TOKEN_KEY)
+  } catch { /* sessionStorage may be unavailable in hardened browsers */ }
+}
+
+export function clearSession() { setAccessToken(null) }
 
 function csrfToken() {
   return document.cookie.split('; ').find((part) => part.startsWith('hms_csrf='))?.split('=')[1]
@@ -10,13 +25,23 @@ export async function api<T>(path: string, options: RequestInit = {}): Promise<T
   const method = (options.method ?? 'GET').toUpperCase()
   const headers = new Headers(options.headers)
   if (options.body && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json')
+  const accessToken = getAccessToken()
+  if (accessToken && !headers.has('Authorization')) headers.set('Authorization', `Bearer ${accessToken}`)
   if (!['GET', 'HEAD', 'OPTIONS'].includes(method)) {
     const csrf = csrfToken()
     if (csrf) headers.set('X-CSRF-Token', decodeURIComponent(csrf))
   }
   const res = await fetch(`${API}${path}`, { ...options, headers, credentials: 'include' })
-  if (res.status === 401 && path !== '/auth/login') {
-    // The next request (or the auth provider) will handle re-authentication.
+  if (res.status === 401 && path !== '/auth/login' && path !== '/auth/refresh') {
+    // Access tokens are intentionally short-lived. Rotate the HttpOnly refresh
+    // session once before sending the user back to the login screen.
+    const refreshed = await fetch(`${API}/auth/refresh`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include' })
+    if (refreshed.ok) {
+      const session = await refreshed.json() as { access_token?: string }
+      setAccessToken(session.access_token ?? null)
+      return api<T>(path, options)
+    }
+    clearSession()
     window.dispatchEvent(new CustomEvent('hms:unauthorized'))
   }
   if (!res.ok) {
@@ -25,7 +50,9 @@ export async function api<T>(path: string, options: RequestInit = {}): Promise<T
     throw new Error(payload.error?.message ?? `Request failed (${res.status})`)
   }
   if (res.status === 204) return undefined as T
-  return res.json() as Promise<T>
+  const payload = await res.json() as T & { access_token?: string }
+  if (path === '/auth/login' || path === '/auth/refresh') setAccessToken(payload.access_token ?? null)
+  return payload as T
 }
 
 export type Page<T> = { items: T[]; total: number; page: number; page_size: number; pages: number; has_next: boolean; has_previous: boolean }
