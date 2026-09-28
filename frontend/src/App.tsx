@@ -43,14 +43,27 @@ const primaryNav: NavItem[] = [{ label: 'Overview', icon: LayoutDashboard, to: '
 const operationsNav: NavItem[] = [{ label: 'Housekeeping', icon: Sparkles, to: '/housekeeping' }, { label: 'Maintenance', icon: Wrench, to: '/maintenance' }, { label: 'Services & dining', icon: Coffee, to: '/services' }]
 const financeNav: NavItem[] = [{ label: 'Payments', icon: CircleDollarSign, to: '/finance' }, { label: 'Reports', icon: FileText, to: '/reports' }]
 
+function VisitorHome({ onStaffLogin }: { onStaffLogin: () => void }) {
+  return <main className="visitor-home">
+    <header className="visitor-nav"><div className="visitor-brand"><span className="brand-icon"><Hotel size={18} /></span><span>AURORA <b>GRAND</b></span></div><button className="secondary-button visitor-login" onClick={onStaffLogin}>Staff sign in <ChevronRight size={15} /></button></header>
+    <section className="visitor-hero"><div className="visitor-hero-copy"><span className="eyebrow">AURORA GRAND HOTEL · HARBOR DISTRICT</span><h1>A quieter kind<br />of <em>luxury.</em></h1><p>Thoughtful rooms, warm service, and a stay shaped around the way you want to feel when you arrive.</p><div className="visitor-actions"><button className="primary-button" onClick={() => undefined}>Explore the hotel <ChevronRight size={16} /></button><button className="text-button" onClick={onStaffLogin}>Hotel staff sign in <ChevronRight size={15} /></button></div></div><div className="visitor-hero-card"><span className="visitor-card-kicker">THE AURORA EXPERIENCE</span><strong>Stay a little<br /><em>longer.</em></strong><span className="visitor-card-meta">Rooms · Dining · Wellness</span></div></section>
+    <section className="visitor-intro"><div><span className="eyebrow">A PLACE TO ARRIVE</span><h2>Made for unhurried mornings and memorable evenings.</h2></div><p>From the first welcome to the final coffee, every detail at Aurora Grand is considered with care. Discover a modern landmark with the soul of a private residence.</p></section>
+    <section className="visitor-features"><article><BedDouble size={20} /><span className="eyebrow">ROOMS & SUITES</span><h3>Rest beautifully</h3><p>Calm interiors, considered comforts, and views that make the city feel far away.</p></article><article><Coffee size={20} /><span className="eyebrow">DINING</span><h3>Gather well</h3><p>Seasonal plates and effortless service from breakfast through late evening.</p></article><article><Sparkles size={20} /><span className="eyebrow">WELLNESS</span><h3>Find your pace</h3><p>A quiet retreat for restorative treatments, movement, and time to yourself.</p></article></section>
+    <footer className="visitor-footer"><span>© 2026 Aurora Grand Hotel</span><span>Harbor District · New York</span></footer>
+  </main>
+}
+
 function App() {
   const cachedUser = rememberedUser()
+  const location = useLocation()
   const navigate = useNavigate()
+  const shouldRestoreSession = location.pathname !== '/' || Boolean(cachedUser)
   const [user, setUser] = useState<User | null>(cachedUser)
-  const [checking, setChecking] = useState(true)
+  const [checking, setChecking] = useState(shouldRestoreSession)
   const [authError, setAuthError] = useState('')
   const bootstrapController = useRef<AbortController | null>(null)
   useEffect(() => {
+    if (!shouldRestoreSession) return
     const controller = new AbortController()
     let cancelled = false
     bootstrapController.current = controller
@@ -63,6 +76,7 @@ function App() {
         rememberUser(verified)
         setUser(verified)
         setAuthError('')
+        if (location.pathname === '/') navigate('/dashboard', { replace: true })
       } catch (error) {
         if (cancelled || controller.signal.aborted) {
           if (isPreviewHost()) console.info('[AUTH] stale session restore cancelled')
@@ -88,7 +102,7 @@ function App() {
       if (bootstrapController.current === controller) bootstrapController.current = null
       window.removeEventListener('hms:unauthorized', logout)
     }
-  }, [])
+  }, [shouldRestoreSession])
   const handleLogin = (loggedInUser: User) => {
     // A late unauthenticated bootstrap response must never clear this newly
     // authenticated session.
@@ -108,7 +122,7 @@ function App() {
   }
   if (checking) return <div className="app-loading"><div className="brand-loader"><Hotel size={22} /><span>AURORA GRAND</span></div><span className="spinner dark" /></div>
   if (authError) return <ErrorState message={authError} />
-  if (!user) return <Login onLogin={handleLogin} />
+  if (!user) return location.pathname === '/' ? <VisitorHome onStaffLogin={() => navigate('/login')} /> : <Login onLogin={handleLogin} />
   return <AppShell user={user} onLogout={handleLogout} />
 }
 
