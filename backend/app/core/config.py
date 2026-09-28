@@ -30,6 +30,11 @@ class Settings(BaseSettings):
     environment: Literal["development", "staging", "production", "test"] = "development"
     debug: bool = False
     enable_docs: bool = True
+    # Explicitly disabled by default. The Arena preview enables this to avoid
+    # repeated sign-ins while testing seeded workflows; never enable in prod.
+    demo_mode: bool = False
+    demo_user_email: str = "admin@auroragrand.example"
+    demo_user_password: str = "AuroraAdmin!2026"
     timezone: str = "UTC"
     default_currency: str = "USD"
     default_tax_rate: float = 10.0  # percentage applied to accommodation & services

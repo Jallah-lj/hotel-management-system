@@ -63,6 +63,29 @@ def login(payload: LoginRequest, request: Request, response: Response, db: Sessi
     return TokenInfo(access_token=result["access_token"], expires_at=result["expires_at"], session_id=str(result["session_id"]), user=user_payload(result["user"]))
 
 
+@router.post("/demo-login", response_model=TokenInfo, summary="Test-only automatic demo sign-in")
+def demo_login(request: Request, response: Response, db: Session = Depends(get_db)):
+    """Open the seeded admin session for the isolated development preview.
+
+    This route is deliberately unavailable unless DEMO_MODE=true, and the
+    production configuration keeps that flag false. It exists only so a
+    sandbox reviewer can open the operational workspace without repeatedly
+    entering development credentials.
+    """
+    if not settings.demo_mode or settings.environment == "production":
+        from app.core.errors import NotFoundError
+        raise NotFoundError("Demo sign-in is not enabled.")
+    result = AuthService(db).login(
+        settings.demo_user_email,
+        settings.demo_user_password,
+        ip=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent"),
+        request=request,
+    )
+    _set_auth_cookies(response, result["access_token"], result["refresh_token"])
+    return TokenInfo(access_token=result["access_token"], expires_at=result["expires_at"], session_id=str(result["session_id"]), user=user_payload(result["user"]))
+
+
 @router.post("/refresh", response_model=TokenInfo, summary="Rotate the refresh session")
 def refresh(payload: RefreshRequest, request: Request, response: Response, db: Session = Depends(get_db)):
     raw = payload.refresh_token or request.cookies.get(settings.refresh_cookie_name)

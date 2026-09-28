@@ -7,8 +7,12 @@ const SESSION_TOKEN_KEY = 'hms_access_token'
 // be embedded under a different top-level origin, where browser cookie
 // partitioning varies by browser. Keep a short-lived bearer fallback only for
 // local/Arena preview hosts; production domains remain cookie-only.
-function previewStorageEnabled() {
+export function isPreviewHost() {
   return window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' || window.location.hostname.endsWith('.e2b.app')
+}
+
+function previewStorageEnabled() {
+  return isPreviewHost()
 }
 
 function getAccessToken() {
@@ -65,7 +69,7 @@ export async function api<T>(path: string, options: RequestInit = {}): Promise<T
     if (csrf) headers.set('X-CSRF-Token', decodeURIComponent(csrf))
   }
   const res = await fetch(`${API}${path}`, { ...options, headers, credentials: 'include' })
-  if (res.status === 401 && path !== '/auth/login' && path !== '/auth/refresh') {
+  if (res.status === 401 && !['/auth/login', '/auth/refresh', '/auth/demo-login'].includes(path)) {
     // Access tokens are intentionally short-lived. Rotate the HttpOnly refresh
     // session once before sending the user back to the login screen.
     const refreshed = await fetch(`${API}/auth/refresh`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include' })
@@ -84,7 +88,7 @@ export async function api<T>(path: string, options: RequestInit = {}): Promise<T
   }
   if (res.status === 204) return undefined as T
   const payload = await res.json() as T & { access_token?: string }
-  if (path === '/auth/login' || path === '/auth/refresh') setAccessToken(payload.access_token ?? null)
+  if (path === '/auth/login' || path === '/auth/refresh' || path === '/auth/demo-login') setAccessToken(payload.access_token ?? null)
   return payload as T
 }
 

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { Activity, AlertTriangle, ArrowDownRight, ArrowUpRight, BedDouble, Bell, CalendarDays, Check, ChevronRight, CircleDollarSign, ClipboardCheck, Coffee, FileText, Hotel, House, LayoutDashboard, LogOut, Menu, Moon, MoreHorizontal, PanelLeftClose, Plus, Receipt, Search, Settings, ShieldCheck, Sparkles, UserRound, Users, Wrench, X } from 'lucide-react'
-import { api, clearSession, Dashboard, Guest, Page, Payment, rememberUser, rememberedUser, Reservation, Room, Service, Task, Ticket, User } from './lib/api'
+import { api, clearSession, Dashboard, Guest, isPreviewHost, Page, Payment, rememberUser, rememberedUser, Reservation, Room, Service, Task, Ticket, User } from './lib/api'
 
 const money = (value: string | number | undefined) => `${Number(value ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 const pretty = (value: string) => value.replaceAll('_', ' ').replace(/\b\w/g, (c) => c.toUpperCase())
@@ -34,12 +34,28 @@ function App() {
   const [user, setUser] = useState<User | null>(cachedUser)
   const [checking, setChecking] = useState(!cachedUser)
   useEffect(() => {
-    api<User>('/auth/me')
-      .then((verified) => { rememberUser(verified); setUser(verified) })
-      .catch(() => { if (!cachedUser) setUser(null) })
-      .finally(() => setChecking(false))
+    const bootstrap = async () => {
+      try {
+        // Arena's isolated preview is a test workspace, so it uses the
+        // server-side demo session instead of presenting a login gate.
+        if (!cachedUser && isPreviewHost()) {
+          const demo = await api<{ user: User }>('/auth/demo-login', { method: 'POST' })
+          rememberUser(demo.user)
+          setUser(demo.user)
+          return
+        }
+        const verified = await api<User>('/auth/me')
+        rememberUser(verified)
+        setUser(verified)
+      } catch {
+        if (!cachedUser) setUser(null)
+      } finally {
+        setChecking(false)
+      }
+    }
     const logout = () => { clearSession(); setUser(null) }
     window.addEventListener('hms:unauthorized', logout)
+    void bootstrap()
     return () => window.removeEventListener('hms:unauthorized', logout)
   }, [])
   const handleLogin = (loggedInUser: User) => { rememberUser(loggedInUser); setUser(loggedInUser) }
