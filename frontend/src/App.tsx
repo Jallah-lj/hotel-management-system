@@ -6,6 +6,7 @@ import { ApiRequestError, api, clearSession, Dashboard, Guest, isPreviewHost, Pa
 
 const money = (value: string | number | undefined) => `${Number(value ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 const pretty = (value: string) => value.replaceAll('_', ' ').replace(/\b\w/g, (c) => c.toUpperCase())
+const loginErrorMessage = (error: unknown) => error instanceof ApiRequestError && error.status === 401 ? 'We could not complete the sign-in session. Please try again.' : error instanceof Error ? error.message : 'Unable to sign in.'
 
 function Login({ onLogin }: { onLogin: (user: User) => void }) {
   const [email, setEmail] = useState('')
@@ -18,11 +19,10 @@ function Login({ onLogin }: { onLogin: (user: User) => void }) {
   async function useDevelopmentAccount() {
     setSandboxBusy(true); setError('')
     try {
-      const response = await api<{ user: User; access_token?: string }>('/auth/demo-login', { method: 'POST' })
-      const verified = await api<User>('/auth/me', response.access_token ? { headers: { Authorization: `Bearer ${response.access_token}` } } : {})
-      onLogin(verified)
+      const response = await api<{ user: User }>('/auth/demo-login', { method: 'POST' })
+      onLogin(response.user)
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'The development account could not be opened.')
+      setError(loginErrorMessage(e))
     } finally { setSandboxBusy(false) }
   }
 
@@ -42,7 +42,7 @@ function Login({ onLogin }: { onLogin: (user: User) => void }) {
       const verified = await api<User>('/auth/me', response.access_token ? { headers: { Authorization: `Bearer ${response.access_token}` } } : {})
       if (isPreviewHost()) console.info('[AUTH] post-login /me verified', { email: verified.email })
       onLogin(verified)
-    } catch (e) { if (isPreviewHost()) console.info('[AUTH] login failed', { message: e instanceof Error ? e.message : 'unknown error' }); setError(e instanceof Error ? e.message : 'Unable to sign in') }
+    } catch (e) { if (isPreviewHost()) console.info('[AUTH] login failed', { message: e instanceof Error ? e.message : 'unknown error' }); setError(loginErrorMessage(e)) }
     finally { setBusy(false) }
   }
   return <main className="login-page">
