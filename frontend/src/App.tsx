@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { Activity, AlertTriangle, ArrowDownRight, ArrowUpRight, BedDouble, Bell, CalendarDays, Check, ChevronRight, CircleDollarSign, ClipboardCheck, Coffee, FileText, Hotel, House, LayoutDashboard, LogOut, Menu, Moon, MoreHorizontal, PanelLeftClose, Plus, Receipt, Search, Settings, ShieldCheck, Sparkles, UserRound, Users, Wrench, X } from 'lucide-react'
-import { api, clearSession, Dashboard, Guest, Page, Payment, Reservation, Room, Service, Task, Ticket, User } from './lib/api'
+import { api, clearSession, Dashboard, Guest, Page, Payment, rememberUser, rememberedUser, Reservation, Room, Service, Task, Ticket, User } from './lib/api'
 
 const money = (value: string | number | undefined) => `${Number(value ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 const pretty = (value: string) => value.replaceAll('_', ' ').replace(/\b\w/g, (c) => c.toUpperCase())
@@ -30,11 +30,21 @@ const operationsNav: NavItem[] = [{ label: 'Housekeeping', icon: Sparkles, to: '
 const financeNav: NavItem[] = [{ label: 'Payments', icon: CircleDollarSign, to: '/finance' }, { label: 'Reports', icon: FileText, to: '/reports' }]
 
 function App() {
-  const [user, setUser] = useState<User | null>(null)
-  const [checking, setChecking] = useState(true)
-  useEffect(() => { api<User>('/auth/me').then(setUser).catch(() => setUser(null)).finally(() => setChecking(false)); const logout = () => setUser(null); window.addEventListener('hms:unauthorized', logout); return () => window.removeEventListener('hms:unauthorized', logout) }, [])
+  const cachedUser = rememberedUser()
+  const [user, setUser] = useState<User | null>(cachedUser)
+  const [checking, setChecking] = useState(!cachedUser)
+  useEffect(() => {
+    api<User>('/auth/me')
+      .then((verified) => { rememberUser(verified); setUser(verified) })
+      .catch(() => { if (!cachedUser) setUser(null) })
+      .finally(() => setChecking(false))
+    const logout = () => { clearSession(); setUser(null) }
+    window.addEventListener('hms:unauthorized', logout)
+    return () => window.removeEventListener('hms:unauthorized', logout)
+  }, [])
+  const handleLogin = (loggedInUser: User) => { rememberUser(loggedInUser); setUser(loggedInUser) }
   if (checking) return <div className="app-loading"><div className="brand-loader"><Hotel size={22} /><span>AURORA GRAND</span></div><span className="spinner dark" /></div>
-  if (!user) return <Login onLogin={setUser} />
+  if (!user) return <Login onLogin={handleLogin} />
   return <AppShell user={user} onLogout={() => { api('/auth/logout', { method: 'POST' }).finally(() => { clearSession(); setUser(null) }) }} />
 }
 

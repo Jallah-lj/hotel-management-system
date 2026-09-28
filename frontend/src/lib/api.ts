@@ -28,7 +28,27 @@ function setAccessToken(token: string | null) {
   } catch { /* storage may be unavailable in hardened browsers */ }
 }
 
-export function clearSession() { setAccessToken(null) }
+export function rememberUser(user: User) {
+  try {
+    sessionStorage.setItem('hms_user', JSON.stringify(user))
+    if (previewStorageEnabled()) localStorage.setItem('hms_user', JSON.stringify(user))
+  } catch { /* storage may be unavailable in hardened browsers */ }
+}
+
+export function rememberedUser(): User | null {
+  try {
+    const raw = sessionStorage.getItem('hms_user') || (previewStorageEnabled() ? localStorage.getItem('hms_user') : null)
+    return raw ? JSON.parse(raw) as User : null
+  } catch { return null }
+}
+
+export function clearSession() {
+  setAccessToken(null)
+  try {
+    sessionStorage.removeItem('hms_user')
+    if (previewStorageEnabled()) localStorage.removeItem('hms_user')
+  } catch { /* storage may be unavailable in hardened browsers */ }
+}
 
 function csrfToken() {
   return document.cookie.split('; ').find((part) => part.startsWith('hms_csrf='))?.split('=')[1]
