@@ -8,7 +8,9 @@ const SESSION_TOKEN_KEY = 'hms_access_token'
 // partitioning varies by browser. Keep a short-lived bearer fallback only for
 // local/Arena preview hosts; production domains remain cookie-only.
 export function isPreviewHost() {
-  return window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' || window.location.hostname.endsWith('.e2b.app')
+  // Vite development mode is the sandbox preview. Production builds have
+  // import.meta.env.DEV=false and therefore never use demo authentication.
+  return import.meta.env.DEV || window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' || window.location.hostname.includes('e2b.app')
 }
 
 function previewStorageEnabled() {
