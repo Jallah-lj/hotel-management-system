@@ -58,7 +58,7 @@ def _clear_auth_cookies(response: Response) -> None:
 
 @router.post("/login", response_model=TokenInfo, summary="Sign in a staff member")
 def login(payload: LoginRequest, request: Request, response: Response, db: Session = Depends(get_db)):
-    result = AuthService(db).login(payload.email, payload.password, ip=request.client.host if request.client else None, user_agent=request.headers.get("user-agent"), request=request)
+    result = AuthService(db).login(payload.email, payload.password, ip=request.client.host if request.client else None, user_agent=request.headers.get("user-agent"), request=request, enforce_rate_limit=not settings.demo_mode)
     _set_auth_cookies(response, result["access_token"], result["refresh_token"])
     return TokenInfo(access_token=result["access_token"], expires_at=result["expires_at"], session_id=str(result["session_id"]), user=user_payload(result["user"]))
 
@@ -81,12 +81,13 @@ def demo_login(request: Request, response: Response, db: Session = Depends(get_d
         ip=request.client.host if request.client else None,
         user_agent=request.headers.get("user-agent"),
         request=request,
+        enforce_rate_limit=False,
     )
     _set_auth_cookies(response, result["access_token"], result["refresh_token"])
     return TokenInfo(access_token=result["access_token"], expires_at=result["expires_at"], session_id=str(result["session_id"]), user=user_payload(result["user"]))
 
 
-@router.post("/refresh", response_model=TokenInfo, summary="Rotate the refresh session")
+@router.post("/refresh",  response_model=TokenInfo, summary="Rotate the refresh session")
 def refresh(payload: RefreshRequest, request: Request, response: Response, db: Session = Depends(get_db)):
     raw = payload.refresh_token or request.cookies.get(settings.refresh_cookie_name)
     if not raw:

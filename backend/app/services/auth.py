@@ -47,11 +47,13 @@ class AuthService:
             .options(selectinload(User.roles).selectinload(Role.permissions))
         )
 
-    def login(self, identifier: str, password: str, *, ip: str | None, user_agent: str | None, request=None) -> dict:
+    def login(self, identifier: str, password: str, *, ip: str | None, user_agent: str | None, request=None, enforce_rate_limit: bool = True) -> dict:
         # A database-backed IP throttle survives worker restarts and applies
         # before account lookup, making it resistant to credential stuffing and
-        # account enumeration through timing differences.
-        if ip:
+        # account enumeration through timing differences. The isolated demo
+        # bootstrap is explicitly exempt so repeated sandbox reloads cannot
+        # lock the test workspace out.
+        if enforce_rate_limit and ip:
             window_start = datetime.now(UTC) - timedelta(minutes=1)
             recent = self.db.scalar(select(func.count(LoginAttempt.id)).where(LoginAttempt.ip_address == ip, LoginAttempt.attempted_at >= window_start)) or 0
             if recent >= 10:
