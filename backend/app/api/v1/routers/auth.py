@@ -40,14 +40,20 @@ def user_payload(user: User) -> SessionUser:
     )
 
 
-def _set_auth_cookies(response: Response, access: str, refresh: str) -> None:
-    common = dict(httponly=True, secure=settings.cookie_secure, samesite=settings.cookie_samesite, domain=settings.cookie_domain, path="/")
+def _set_auth_cookies(response: Response, access: str, refresh: str, request: Request) -> None:
+    # The API can sit behind Vite/Nginx, so request.url.scheme may be HTTP even
+    # when the browser-facing URL is HTTPS. Prefer the trusted forwarded scheme
+    # and never emit Secure cookies over an HTTP preview connection.
+    forwarded = request.headers.get("x-forwarded-proto", request.url.scheme).split(",", 1)[0].strip().lower()
+    secure = settings.cookie_secure and forwarded == "https"
+    samesite = settings.cookie_samesite if secure or settings.cookie_samesite != "none" else "lax"
+    common = dict(httponly=True, secure=secure, samesite=samesite, domain=settings.cookie_domain, path="/")
     response.set_cookie("hms_access", access, max_age=settings.access_token_expire_minutes * 60, **common)
     response.set_cookie(settings.refresh_cookie_name, refresh, max_age=settings.refresh_token_expire_days * 86400, **common)
     # Non-HttpOnly token used by the browser to prove same-site intent.  The
     # API checks it in production middleware for state-changing requests.
     if settings.csrf_enabled:
-        response.set_cookie(settings.csrf_cookie_name, generate_opaque_token(24), httponly=False, secure=settings.cookie_secure, samesite=settings.cookie_samesite, domain=settings.cookie_domain, path="/")
+        response.set_cookie(settings.csrf_cookie_name, generate_opaque_token(24), httponly=False, secure=secure, samesite=samesite, domain=settings.cookie_domain, path="/")
 
 
 def _clear_auth_cookies(response: Response) -> None:
@@ -59,7 +65,7 @@ def _clear_auth_cookies(response: Response) -> None:
 @router.post("/login", response_model=TokenInfo, summary="Sign in a staff member")
 def login(payload: LoginRequest, request: Request, response: Response, db: Session = Depends(get_db)):
     result = AuthService(db).login(payload.email, payload.password, ip=request.client.host if request.client else None, user_agent=request.headers.get("user-agent"), request=request, enforce_rate_limit=not settings.demo_mode)
-    _set_auth_cookies(response, result["access_token"], result["refresh_token"])
+    _set_auth_cookies(response, result["access_token"], result["refresh_token"], request)
     return TokenInfo(access_token=result["access_token"], expires_at=result["expires_at"], session_id=str(result["session_id"]), user=user_payload(result["user"]))
 
 
@@ -83,7 +89,7 @@ def demo_login(request: Request, response: Response, db: Session = Depends(get_d
         request=request,
         enforce_rate_limit=False,
     )
-    _set_auth_cookies(response, result["access_token"], result["refresh_token"])
+    _set_auth_cookies(response, result["access_token"], result["refresh_token"], request)
     return TokenInfo(access_token=result["access_token"], expires_at=result["expires_at"], session_id=str(result["session_id"]), user=user_payload(result["user"]))
 
 
@@ -93,7 +99,7 @@ def refresh(payload: RefreshRequest, request: Request, response: Response, db: S
     if not raw:
         raise AuthenticationError("Refresh session is missing.")
     result = AuthService(db).refresh(raw, ip=request.client.host if request.client else None, user_agent=request.headers.get("user-agent"), request=request)
-    _set_auth_cookies(response, result["access_token"], result["refresh_token"])
+    _set_auth_cookies(response, result["access_token"], result["refresh_token"], request)
     return TokenInfo(access_token=result["access_token"], expires_at=result["expires_at"], session_id=str(result["session_id"]), user=user_payload(result["user"]))
 
 
