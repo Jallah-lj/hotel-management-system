@@ -8,7 +8,7 @@ const money = (value: string | number | undefined) => `${Number(value ?? 0).toLo
 const pretty = (value: string) => value.replaceAll('_', ' ').replace(/\b\w/g, (c) => c.toUpperCase())
 const loginErrorMessage = (error: unknown) => error instanceof ApiRequestError && error.status === 401 ? 'We could not complete the sign-in session. Please try again.' : error instanceof Error ? error.message : 'Unable to sign in.'
 
-function Login({ onLogin }: { onLogin: (user: User) => void }) {
+function Login({ onLogin, notice }: { onLogin: (user: User) => void; notice?: string }) {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [busy, setBusy] = useState(false)
@@ -46,7 +46,7 @@ function Login({ onLogin }: { onLogin: (user: User) => void }) {
   }
   return <main className="login-page">
     <section className="login-visual"><div className="login-mark"><Hotel size={22} strokeWidth={1.8} /><span>AURORA GRAND</span></div><div className="visual-copy"><span className="eyebrow light">OPERATIONS WORKSPACE</span><h1>Every stay,<br /><em>beautifully</em> handled.</h1><p>A single, calm command center for the people who make every arrival feel effortless.</p></div><div className="visual-foot"><span>EST. 1998</span><span>HARBOR DISTRICT · NEW YORK</span></div></section>
-    <section className="login-form-wrap"><div className="login-form"><div className="mobile-mark"><Hotel size={19} /><span>AURORA GRAND</span></div><span className="eyebrow">STAFF PORTAL</span><h2>Welcome back</h2><p className="muted">Sign in to continue to your hotel workspace.</p><form onSubmit={submit}><label>Work email or username<input autoFocus type="text" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@auroragrand.example" autoComplete="username" /></label><label>Password<div className="password-field"><input type={showPassword ? 'text' : 'password'} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Enter your password" autoComplete="current-password" /><button type="button" className="reveal" aria-label={showPassword ? 'Hide password' : 'Show password'} onClick={() => setShowPassword((value) => !value)}>{showPassword ? <EyeOff size={16} /> : <Eye size={16} />}</button></div></label>{error && <div className="form-error"><AlertTriangle size={16} />{error}</div>}<button className="primary-button wide" disabled={busy}>{busy ? <span className="spinner" /> : <><span>Sign in securely</span><ChevronRight size={17} /></>}</button>{isPreviewHost() && <button type="button" className="secondary-button wide sandbox-button" onClick={useDevelopmentAccount} disabled={busy || sandboxBusy}>{sandboxBusy ? <span className="spinner dark" /> : <><span>Use development account</span><ChevronRight size={17} /></>}</button>}</form><div className="login-help"><ShieldCheck size={15} /><span>Protected with encrypted sessions and role-based access.</span></div></div></section>
+    <section className="login-form-wrap"><div className="login-form"><div className="mobile-mark"><Hotel size={19} /><span>AURORA GRAND</span></div><span className="eyebrow">STAFF PORTAL</span><h2>Welcome back</h2><p className="muted">Sign in to continue to your hotel workspace.</p>{notice && <div className="form-error"><AlertTriangle size={16} />{notice}</div>}<form onSubmit={submit}><label>Work email or username<input autoFocus type="text" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@auroragrand.example" autoComplete="username" /></label><label>Password<div className="password-field"><input type={showPassword ? 'text' : 'password'} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Enter your password" autoComplete="current-password" /><button type="button" className="reveal" aria-label={showPassword ? 'Hide password' : 'Show password'} onClick={() => setShowPassword((value) => !value)}>{showPassword ? <EyeOff size={16} /> : <Eye size={16} />}</button></div></label>{error && <div className="form-error"><AlertTriangle size={16} />{error}</div>}<button className="primary-button wide" disabled={busy}>{busy ? <span className="spinner" /> : <><span>Sign in securely</span><ChevronRight size={17} /></>}</button>{isPreviewHost() && <button type="button" className="secondary-button wide sandbox-button" onClick={useDevelopmentAccount} disabled={busy || sandboxBusy}>{sandboxBusy ? <span className="spinner dark" /> : <><span>Use development account</span><ChevronRight size={17} /></>}</button>}</form><div className="login-help"><ShieldCheck size={15} /><span>Protected with encrypted sessions and role-based access.</span></div></div></section>
   </main>
 }
 
@@ -77,6 +77,9 @@ function App() {
   const [user, setUser] = useState<User | null>(cachedUser)
   const [checking, setChecking] = useState(shouldRestoreSession)
   const [authError, setAuthError] = useState('')
+  // Set when the automatic test sign-in fails: the tester is dropped back to
+  // the manual login form so the workspace is never unreachable.
+  const [autoSignInFailed, setAutoSignInFailed] = useState(false)
   const bootstrapController = useRef<AbortController | null>(null)
   useEffect(() => {
     let active = true
@@ -125,10 +128,17 @@ function App() {
           setAuthError('The workspace took too long to respond. Please try again.')
           return
         }
-        if (isPreviewHost()) console.info('[AUTH] session restore failed', { status: error instanceof ApiRequestError ? error.status : 0, message: error instanceof Error ? error.message : 'unknown error' })
+        if (isPreviewHost()) console.info('[AUTH] session restore failed', { status: error instanceof ApiRequestError ? error.status : 0, message: error instanceof Error ? error.message : 'unknown error', loginDisabled })
         if (error instanceof ApiRequestError && error.status === 401) {
           clearSession()
           setUser(null)
+          // The automatic test account could not be opened: fall back to the
+          // manual login form instead of leaving the tester on a spinner.
+          if (loginDisabled) setAutoSignInFailed(true)
+        } else if (loginDisabled) {
+          // Any other automatic sign-in failure also falls back to the manual
+          // form so the workspace remains reachable while testing.
+          setAutoSignInFailed(true)
         } else {
           setAuthError(error instanceof Error ? error.message : 'Unable to verify your hotel session.')
         }
@@ -170,7 +180,8 @@ function App() {
   if (checking) return <div className="app-loading"><div className="brand-loader"><Hotel size={22} /><span>AURORA GRAND</span></div><span className="spinner dark" /></div>
   if (authError) return <ErrorState message={authError} />
   if (!user) {
-    if (authConfig === null || loginDisabled) return <div className="app-loading"><div className="brand-loader"><Hotel size={22} /><span>AURORA GRAND</span></div><span className="muted">Sign-in is disabled — opening the test workspace…</span><span className="spinner dark" /></div>
+    if (!autoSignInFailed && (authConfig === null || loginDisabled)) return <div className="app-loading"><div className="brand-loader"><Hotel size={22} /><span>AURORA GRAND</span></div><span className="muted">Sign-in is disabled — opening the test workspace…</span><span className="spinner dark" /></div>
+    if (autoSignInFailed) return <Login onLogin={handleLogin} notice="The automatic test sign-in could not be completed. Use the development account button, or the seeded credentials from the README." />
     return location.pathname === '/' ? <VisitorHome onStaffLogin={() => navigate('/login')} /> : <Login onLogin={handleLogin} />
   }
   return <AppShell user={user} onLogout={handleLogout} testMode={loginDisabled} />

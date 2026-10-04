@@ -49,6 +49,20 @@ def test_demo_login_is_unavailable_when_login_is_enabled(client, seeded_admin):
     assert response.status_code == 404
 
 
+def test_disable_login_provisions_missing_demo_account(client, disable_login):
+    """A fresh/unseeded database must still open the workspace, not 401."""
+    demo = client.post("/api/v1/auth/demo-login")
+    assert demo.status_code == 200
+    assert demo.json()["user"]["email"] == settings.demo_user_email
+
+    me = client.get("/api/v1/auth/me")
+    assert me.status_code == 200
+    assert me.json()["is_superuser"] is True
+
+    # The provisioned account can use the whole workspace.
+    assert client.get("/api/v1/dashboard").status_code == 200
+
+
 def test_disable_login_opens_workspace_without_credentials(client, disable_login, seeded_admin):
     config = client.get("/api/v1/auth/config")
     assert config.status_code == 200
