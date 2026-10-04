@@ -126,7 +126,53 @@ function VisitorHome({ onStaffLogin, inWorkspace = false }: { onStaffLogin: () =
     {data && data.room_types.length > 0 && <section className="visitor-rooms"><div className="visitor-section-head"><span className="eyebrow">ROOMS & SUITES</span><h2>Choose your stay</h2><p>Live from our reservations catalogue — rates per night.</p></div><div className="visitor-room-grid">{data.room_types.map((rt) => <article className="visitor-room-card" key={rt.id}><div className="visitor-room-top"><strong>{rt.name}</strong><span>{rt.code}</span></div><p>{rt.description}</p><div className="visitor-room-meta"><span><BedDouble size={13} />{pretty(rt.bed_type)} · sleeps {rt.max_occupancy}</span>{rt.size_sqm ? <span><House size={13} />{rt.size_sqm} m²</span> : null}</div>{rt.amenities.length > 0 && <div className="visitor-amenities">{rt.amenities.slice(0, 4).map((a) => <em key={a}>{a}</em>)}{rt.amenities.length > 4 ? <em>+{rt.amenities.length - 4} more</em> : null}</div>}<div className="visitor-room-price"><strong>${money(String(rt.base_price))}</strong><span>per night</span></div></article>)}</div></section>}
     {data && data.services.length > 0 && <section className="visitor-services"><div className="visitor-section-head"><span className="eyebrow">FEATURES & SERVICES</span><h2>Everything a stay can ask for</h2><p>Available to every guest — prices include our standard service.</p></div><div className="visitor-service-grid">{Object.entries(servicesByCategory).map(([category, items]) => { const Icon = SERVICE_ICONS[category] ?? Sparkles; return <article className="visitor-service-card" key={category}><header><Icon size={17} /><h3>{pretty(category)}</h3></header>{items.map((s) => <div className="visitor-service-row" key={s.code}><div><strong>{s.name}</strong>{s.description ? <small>{s.description}</small> : null}</div><span>${money(String(s.price))} <i>{s.unit}</i></span></div>)}</article> })}</div></section>}
     {h && <section className="visitor-info"><div><span className="eyebrow">VISIT US</span><h2>{h.name}</h2></div><div className="visitor-info-grid"><div><Phone size={16} /><strong>Call the front desk</strong><span>{h.phone || '—'}</span></div><div><Mail size={16} /><strong>Reservations</strong><span>{h.email || '—'}</span></div><div><Hotel size={16} /><strong>Find us</strong><span>{h.address || '—'}</span></div><div><CalendarDays size={16} /><strong>Arrivals & departures</strong><span>Check-in {h.check_in_time} · check-out {h.check_out_time}</span></div></div></section>}
-    <footer className="visitor-footer"><span>© 2026 {h?.name ?? 'Aurora Grand Hotel'}</span><span>{h?.address || 'Harbor District'}</span></footer>
+    <footer className="visitor-footer"><span>© 2026 {h?.name ?? 'Aurora Grand Hotel'}</span><button className="text-button" onClick={() => window.location.assign('/policy')}>Privacy &amp; Policy</button><span>{h?.address || 'Harbor District'}</span></footer>
+  </main>
+}
+
+function PolicyPage({ onBack }: { onBack: () => void }) {
+  const sections: { id: string; title: string; body: string[] }[] = [
+    { id: 'overview', title: '1. Overview', body: [
+      'This Privacy & Policy notice explains what information Aurora Grand Hotel ("we", "us") collects when you use our website, booking services and on-property systems, why we collect it, and the choices you have.',
+      'By making a reservation, checking in, or using the guest services at Aurora Grand Hotel, you agree to the practices described on this page. The policy applies to guests, visitors to this website, and anyone who contacts our reservations team.'] },
+    { id: 'collect', title: '2. Information we collect', body: [
+      'Identity & contact details — full name, email address, phone number and nationality, provided when a booking is created or a guest profile is opened.',
+      'Stay details — arrival and departure dates, room type, number of guests, special requests and service orders (dining, spa, transfers).',
+      'Payment information — amounts, method and a non-sensitive external reference (authorisation code or transfer ID). We never store card numbers, CVV codes or bank credentials; payment instruments are handled by your bank or payment provider.',
+      'Identity verification — where local law requires, a government ID may be inspected at check-in. Only the minimum fields required by law are recorded.',
+      'Technical data — anonymous request identifiers and error references used to keep our systems healthy and secure.'] },
+    { id: 'use', title: '3. How we use your information', body: [
+      'To fulfil your reservation: assign rooms, prepare arrivals, issue invoices and settle folios.',
+      'To operate hotel services: housekeeping scheduling, maintenance responses, and dining or wellness orders attached to your stay.',
+      'To communicate with you about your stay — arrival instructions, schedule changes, or responses to requests you make.',
+      'For legitimate business operations: aggregated occupancy and revenue reporting. These reports use totals and trends only, never your name.',
+      'To meet legal obligations: tax records, lodging registers and audit trails required of licensed hotels.'] },
+    { id: 'sharing', title: '4. What we never do', body: [
+      'We do not sell guest data, and we do not share personal information with third parties for marketing.',
+      'We disclose information only where required by law (for example a valid court order), or to the limited processors that help us run the hotel — each bound by confidentiality.'] },
+    { id: 'retention', title: '5. Retention', body: [
+      'Guest and reservation records are kept for the period required by hospitality and tax regulation, after which they are archived or securely deleted.',
+      'Payment entries are retained as financial records; card details are never retained because they are never stored.',
+      'You may ask us to correct your details or close your guest profile at any time, subject to legal retention duties.'] },
+    { id: 'security', title: '6. Security', body: [
+      'Access to guest data inside our operations workspace is role-based: staff see only what their role requires, and every sensitive action is written to an audit trail.',
+      'Connections are encrypted in transit, passwords are stored only as salted hashes, and sessions expire automatically.',
+      'If you believe you have found a security issue, contact us immediately — we treat every report as urgent.'] },
+    { id: 'cookies', title: '7. Cookies & sessions', body: [
+      'This site uses a first-party session cookie strictly to keep staff signed in to the operations workspace. Guest-facing pages set no tracking cookies and run no advertising or analytics trackers.'] },
+    { id: 'rights', title: '8. Your rights & contact', body: [
+      'You may request a copy of the personal information we hold about you, ask for corrections, or raise a concern at any time.',
+      'Contact the Front Desk: stay@auroragrand.example · +1 555 014 2040, or write to Aurora Grand Hotel, 18 Meridian Avenue, Harbor District.',
+      'This policy was last updated on October 4, 2026.'] },
+  ]
+  return <main className="visitor-home policy-page">
+    <header className="visitor-nav"><button className="text-button" onClick={onBack}><ChevronRight size={15} style={{ transform: 'rotate(180deg)' }} /> Back to the hotel site</button><div className="visitor-brand"><span className="brand-icon"><Hotel size={18} /></span><span>AURORA <b>GRAND</b></span></div></header>
+    <section className="policy-hero"><span className="eyebrow">AURORA GRAND HOTEL</span><h1>Privacy &amp; Policy</h1><p>Plain language about the information we keep, why we keep it, and how it stays protected. Last updated October 4, 2026.</p></section>
+    <div className="policy-layout">
+      <nav className="policy-toc">{sections.map((s) => <a key={s.id} href={`#${s.id}`} onClick={(e) => { e.preventDefault(); document.getElementById(s.id)?.scrollIntoView({ behavior: 'smooth' }) }}>{s.title}</a>)}</nav>
+      <div className="policy-body">{sections.map((s) => <section key={s.id} id={s.id}><h2>{s.title}</h2>{s.body.map((p, i) => <p key={i}>{p}</p>)}</section>)}</div>
+    </div>
+    <footer className="visitor-footer"><span>© 2026 Aurora Grand Hotel</span><span>18 Meridian Avenue, Harbor District</span></footer>
   </main>
 }
 
@@ -251,6 +297,7 @@ function App() {
   // The guest-facing homepage is public and must render even while the
   // workspace session is still bootstrapping (or while login is disabled).
   if (location.pathname === '/home') return <VisitorHome inWorkspace={Boolean(user)} onStaffLogin={() => navigate(user ? '/' : '/login')} />
+  if (location.pathname === '/policy' || location.pathname === '/privacy') return <PolicyPage onBack={() => navigate('/home')} />
   if (checking) return <div className="app-loading"><div className="brand-loader"><Hotel size={22} /><span>AURORA GRAND</span></div><span className="spinner dark" /></div>
   if (authError) return <ErrorState message={authError} />
   if (!user) {
