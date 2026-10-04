@@ -168,3 +168,13 @@
 .policy-body p { color:#5c6c77; font-size:12px; line-height:1.75; margin:0 0 10px; }
 .policy-body p:last-child { margin-bottom:0; }
 @media (max-width:900px) { .policy-layout { grid-template-columns:1fr; } .policy-toc { position:static; flex-direction:row; flex-wrap:wrap; border-left:0; border-bottom:1px solid #e4e8e3; padding-bottom:12px; margin-bottom:8px; } .policy-toc a { border-left:0; padding:5px 9px; } }
+
+.visitor-policy-strip { max-width:1280px; margin:26px auto 0; display:flex; align-items:center; gap:22px; background:var(--navy); border-radius:14px; padding:30px 36px; color:#fff; }
+.visitor-policy-icon { width:46px; height:46px; flex:0 0 auto; border-radius:12px; display:grid; place-items:center; background:rgba(44,140,123,.25); color:#7fd0c0; }
+.visitor-policy-copy { flex:1; }
+.visitor-policy-copy .eyebrow { color:#8fd8c8; }
+.visitor-policy-copy h2 { font-family:'Playfair Display', Georgia, serif; font-size:27px; font-weight:500; letter-spacing:-.5px; margin:8px 0 6px; color:#fff; }
+.visitor-policy-copy p { margin:0; color:#aebdca; font-size:12px; line-height:1.6; max-width:560px; }
+.visitor-policy-button { flex:0 0 auto; background:#fff; color:var(--navy); }
+.visitor-policy-button:hover { background:#eef3f1; }
+@media (max-width:900px) { .visitor-policy-strip { flex-direction:column; align-items:flex-start; gap:16px; padding:26px 24px; } .visitor-policy-button { width:100%; justify-content:center; } }
