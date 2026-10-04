@@ -45,6 +45,79 @@ HOTEL_SETTINGS = [
 ]
 
 
+def backfill_history(db) -> None:
+    """Spread ~30 days of finished stays, payments, expenses and cleaned rooms
+    so the Reports workspace has real signal instead of a single-day spike.
+    Idempotent: guarded by the ``seed-history`` marker on seeded payments."""
+    from app.db.enums import ExpenseCategory, ReservationStatus
+    from app.services.common import money, next_setting_number
+    from app.services.payments import PaymentService
+
+    if db.scalar(select(Payment.id).where(Payment.notes == "seed-history").limit(1)):
+        return
+    rooms = list(db.scalars(select(Room).where(Room.deleted_at.is_(None))).all())
+    guests = list(db.scalars(select(Guest)).all())
+    admin = db.scalar(select(User).where(User.email == "admin@auroragrand.example"))
+    if not rooms or not guests or not admin:
+        return
+    today = date.today()
+
+    # Past completed stays, paid out on check-out day.
+    stay_specs = [(28, 2, 0), (24, 3, 1), (19, 2, 2), (15, 4, 3), (10, 2, 4), (6, 3, 0), (3, 2, 1), (1, 1, 2)]
+    methods = [PaymentMethodType.CARD, PaymentMethodType.CASH, PaymentMethodType.BANK_TRANSFER, PaymentMethodType.MOBILE_MONEY]
+    sources = [BookingSource.WEBSITE, BookingSource.OTA, BookingSource.WALK_IN, BookingSource.PHONE]
+    for i, (days_ago, nights, guest_idx) in enumerate(stay_specs):
+        start = today - timedelta(days=days_ago)
+        end = start + timedelta(days=nights)
+        room = rooms[(i * 5 + 2) % len(rooms)]
+        try:
+            res = ReservationService(db, admin).create(ReservationCreate(
+                guest_id=guests[guest_idx % len(guests)].id, room_type_id=room.room_type_id, room_id=room.id,
+                check_in_date=start, check_out_date=end, adults=1 + i % 2, children=0,
+                booking_source=sources[i % len(sources)]))
+        except Exception as exc:
+            print(f"history stay {i} skipped: {exc}")
+            continue
+        res.status = ReservationStatus.CHECKED_OUT
+        res.created_at = datetime.combine(start - timedelta(days=i % 2), datetime.min.time()).replace(tzinfo=UTC)
+        db.flush()
+        try:
+            pay = PaymentService(db, admin).create(res, money(res.total_amount), methods[i % len(methods)], notes="seed-history")
+        except Exception as exc:
+            print(f"history payment {i} skipped: {exc}")
+            continue
+        pay.paid_at = datetime.combine(end, datetime.min.time()).replace(hour=10, minute=15, tzinfo=UTC)
+        db.flush()
+
+    # Operating expenses across the month.
+    expense_specs = [
+        (27, ExpenseCategory.UTILITIES, "Electricity - Harbor wing", 1240, "City Power"),
+        (25, ExpenseCategory.SUPPLIES, "Linen and terry replenishment", 460, "Meridian Linens"),
+        (22, ExpenseCategory.FOOD_BEVERAGE, "Produce delivery", 780, "Greenmarket Co."),
+        (20, ExpenseCategory.MAINTENANCE, "Boiler service visit", 320, "ThermaFix"),
+        (18, ExpenseCategory.SALARIES, "Contract night audit", 900, None),
+        (16, ExpenseCategory.MARKETING, "Seasonal campaign boost", 540, "Northlight Media"),
+        (13, ExpenseCategory.FOOD_BEVERAGE, "Beverage restock", 655, "Harbor Bottling"),
+        (11, ExpenseCategory.TRANSPORTATION, "Airport shuttle fuel", 210, None),
+        (9, ExpenseCategory.SUPPLIES, "Guest amenities restock", 385, "PureStay Supply"),
+        (7, ExpenseCategory.UTILITIES, "Water and sewage", 430, "City Utilities"),
+        (5, ExpenseCategory.MAINTENANCE, "Elevator inspection", 275, "VertiSafe"),
+        (2, ExpenseCategory.TAXES, "Lodging tax remittance", 1520, None),
+    ]
+    for days_ago, category, description, amount, vendor in expense_specs:
+        db.add(Expense(expense_number=next_setting_number(db, "sequence_expense", "EXP"), category=category, description=description, amount=amount, tax_amount=0, currency="USD", expense_date=today - timedelta(days=days_ago), payment_method_label="Bank transfer" if amount > 500 else "Card", vendor=vendor, recorded_by_id=admin.id, notes="seed-history"))
+    db.flush()
+
+    # Rooms cleaned over the past weeks.
+    for i in range(18):
+        day = today - timedelta(days=(i * 2) % 29 + 1)
+        room = rooms[(i * 3 + 1) % len(rooms)]
+        completed = datetime.combine(day, datetime.min.time()).replace(hour=11, minute=(i * 7) % 50, tzinfo=UTC)
+        db.add(HousekeepingTask(room_id=room.id, task_type=HousekeepingTaskType.STAYOVER_CLEAN if i % 3 else HousekeepingTaskType.CHECKOUT_CLEAN, status=HousekeepingTaskStatus.INSPECTED if i % 4 == 0 else HousekeepingTaskStatus.COMPLETED, priority=Priority.MEDIUM, scheduled_date=day, started_at=completed - timedelta(minutes=38), completed_at=completed, notes="seed-history"))
+    db.flush()
+    print("Backfilled ~30 days of history for reports.")
+
+
 def main() -> None:
     Base.metadata.create_all(engine)
     with session_scope() as db:
@@ -97,7 +170,14 @@ def main() -> None:
             db.add(housekeeper)
         db.flush()
 
+        from app.services.common import notify
+        notify(db, user_id=admin.id, title="Arrivals today", message="An arrival is due today; review the front desk queue.", category="reservation", link="/reservations", dedupe_key="seed-arrivals")
+        notify(db, user_id=admin.id, title="Maintenance ticket open", message="A priority ticket is open in engineering and may block a room.", category="maintenance", severity="warning", link="/maintenance", dedupe_key="seed-maintenance")
+        notify(db, user_id=admin.id, title="Housekeeping queue", message="Rooms are waiting on housekeeping attention before the next arrival.", category="housekeeping", link="/housekeeping", dedupe_key="seed-housekeeping")
+        db.flush()
+
         if db.scalar(select(Room.id).limit(1)):
+            backfill_history(db)
             print("Aurora Grand catalogue and accounts already exist; no sample property records added.")
             return
 
@@ -153,6 +233,8 @@ def main() -> None:
         for idx, room in enumerate(rooms[:8]):
             db.add(HousekeepingTask(room_id=room.id, task_type=HousekeepingTaskType.CHECKOUT_CLEAN, status=HousekeepingTaskStatus.PENDING if idx % 2 else HousekeepingTaskStatus.IN_PROGRESS, priority=Priority.HIGH if idx < 2 else Priority.MEDIUM, assigned_to_id=housekeeper.id, created_by_id=manager.id, scheduled_date=today, notes="Guest departure turnaround"))
         db.add(MaintenanceTicket(ticket_number="MNT-DEMO01", room_id=rooms[8].id, category=MaintenanceCategory.AIR_CONDITIONING, priority=Priority.MEDIUM, status=MaintenanceStatus.OPEN, title="Air conditioning is noisy", description="Guest reported intermittent vibration from the wall unit.", reported_by_id=manager.id, reported_at=datetime.now(UTC), blocks_room=False))
+        db.flush()
+        backfill_history(db)
         print("Seeded Aurora Grand Hotel: 20 rooms, 5 guests, 5 staff accounts, services, reservations and operations.")
 
 

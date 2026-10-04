@@ -6,7 +6,7 @@ from datetime import date, UTC, datetime
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Request
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session, joinedload
 
 from app.core.dependencies import require_permission
@@ -16,8 +16,9 @@ from app.db.models.operations import HousekeepingTask, MaintenanceTicket, Notifi
 from app.db.models.user import User
 from app.db.session import get_db
 from app.schemas.common import Page, PaginationParams, Message
-from app.schemas.domain import HousekeepingTaskCreate, HousekeepingTaskOut, HousekeepingTaskUpdate, MaintenanceTicketCreate, MaintenanceTicketOut, MaintenanceTicketUpdate, ServiceCreate, ServiceOrderCreate, ServiceOrderOut, ServiceOrderStatusUpdate, ServiceOut, ServiceUpdate
+from app.schemas.domain import HousekeepingTaskCreate, HousekeepingTaskOut, HousekeepingTaskUpdate, MaintenanceTicketCreate, MaintenanceTicketOut, MaintenanceTicketUpdate, NotificationOut, ServiceCreate, ServiceOrderCreate, ServiceOrderOut, ServiceOrderStatusUpdate, ServiceOut, ServiceUpdate
 from app.services.operations import OperationsService
+from app.services.common import notify
 
 router = APIRouter(tags=["Operations"])
 
@@ -86,7 +87,10 @@ def create_housekeeping(payload: HousekeepingTaskCreate, request: Request, db: S
 def update_housekeeping(task_id: UUID, payload: HousekeepingTaskUpdate, request: Request, db: Session = Depends(get_db), user: User = Depends(require_permission("housekeeping:update_status"))):
     row = db.scalar(select(HousekeepingTask).where(HousekeepingTask.id == task_id).options(joinedload(HousekeepingTask.room)))
     if not row: raise NotFoundError("Housekeeping task not found.")
-    row = OperationsService(db, user, request).update_task(row, payload); db.commit(); db.refresh(row); return row
+    row = OperationsService(db, user, request).update_task(row, payload)
+    if payload.status == HousekeepingTaskStatus.COMPLETED:
+        notify(db, user_id=user.id, title=f"Room {row.room.number if row.room else ''} cleaned", message="Housekeeping marked the room clean; ready for inspection.", category="housekeeping", link="/housekeeping", dedupe_key=f"hk-done-{row.id}")
+    db.commit(); db.refresh(row); return row
 
 
 @router.get("/maintenance", response_model=Page[MaintenanceTicketOut])
@@ -101,7 +105,9 @@ def list_maintenance(pagination: PaginationParams = Depends(), status_filter: Ma
 
 @router.post("/maintenance", response_model=MaintenanceTicketOut)
 def create_maintenance(payload: MaintenanceTicketCreate, request: Request, db: Session = Depends(get_db), user: User = Depends(require_permission("maintenance:create"))):
-    row = OperationsService(db, user, request).create_ticket(payload); db.commit(); db.refresh(row); return row
+    row = OperationsService(db, user, request).create_ticket(payload)
+    notify(db, user_id=user.id, title=f"Maintenance ticket {row.ticket_number} opened", message=row.title, category="maintenance", severity="warning", link="/maintenance", entity_type="maintenance", entity_id=row.id, dedupe_key=f"mnt-created-{row.id}")
+    db.commit(); db.refresh(row); return row
 
 
 @router.patch("/maintenance/{ticket_id}", response_model=MaintenanceTicketOut)
@@ -111,7 +117,7 @@ def update_maintenance(ticket_id: UUID, payload: MaintenanceTicketUpdate, reques
     row = OperationsService(db, user, request).update_ticket(row, payload); db.commit(); db.refresh(row); return row
 
 
-@router.get("/notifications")
+@router.get("/notifications", response_model=Page[NotificationOut])
 def list_notifications(unread_only: bool = False, pagination: PaginationParams = Depends(), db: Session = Depends(get_db), user: User = Depends(require_permission("notifications:view"))):
     q = select(Notification).where(Notification.user_id == user.id)
     if unread_only: q = q.where(Notification.is_read.is_(False))
@@ -125,3 +131,10 @@ def read_notification(notification_id: UUID, db: Session = Depends(get_db), user
     row = db.scalar(select(Notification).where(Notification.id == notification_id, Notification.user_id == user.id))
     if not row: raise NotFoundError("Notification not found.")
     row.is_read = True; row.read_at = datetime.now(UTC); db.commit(); return Message(message="Notification marked as read.")
+
+
+@router.post("/notifications/read-all", response_model=Message)
+def read_all_notifications(db: Session = Depends(get_db), user: User = Depends(require_permission("notifications:view"))):
+    db.execute(update(Notification).where(Notification.user_id == user.id, Notification.is_read.is_(False)).values(is_read=True, read_at=datetime.now(UTC)))
+    db.commit()
+    return Message(message="All notifications marked as read.")

@@ -15,6 +15,7 @@ from app.core.security import generate_opaque_token
 from app.db.models.user import RefreshToken, Role, User
 from app.db.session import get_db
 from app.schemas.auth import (
+    AuthConfig,
     LoginRequest,
     PasswordChangeRequest,
     PasswordResetConfirm,
@@ -62,6 +63,9 @@ def _clear_auth_cookies(response: Response) -> None:
     response.delete_cookie(settings.csrf_cookie_name, path="/", domain=settings.cookie_domain)
 
 
+
+
+
 @router.post("/login", response_model=TokenInfo, summary="Sign in a staff member")
 def login(payload: LoginRequest, request: Request, response: Response, db: Session = Depends(get_db)):
     result = AuthService(db).login(payload.email, payload.password, ip=request.client.host if request.client else None, user_agent=request.headers.get("user-agent"), request=request, enforce_rate_limit=not settings.demo_mode)
@@ -69,18 +73,34 @@ def login(payload: LoginRequest, request: Request, response: Response, db: Sessi
     return TokenInfo(access_token=result["access_token"], expires_at=result["expires_at"], session_id=str(result["session_id"]), user=user_payload(result["user"]))
 
 
+@router.get("/config", response_model=AuthConfig, summary="Public sign-in configuration")
+def auth_config():
+    """Unauthenticated configuration probe used by the UI before rendering.
+
+    The frontend checks ``login_disabled`` to decide whether to show the
+    staff login screen or open the seeded test workspace automatically.
+    """
+    return AuthConfig(login_disabled=settings.disable_login and not settings.is_production)
+
+
 @router.post("/demo-login", response_model=TokenInfo, summary="Test-only automatic demo sign-in")
 def demo_login(request: Request, response: Response, db: Session = Depends(get_db)):
     """Open the seeded admin session for the isolated development preview.
 
-    This route is deliberately unavailable unless DEMO_MODE=true, and the
-    production configuration keeps that flag false. It exists only so a
-    sandbox reviewer can open the operational workspace without repeatedly
-    entering development credentials.
+    This route is deliberately unavailable unless DEMO_MODE=true or
+    DISABLE_LOGIN=true, and the production configuration keeps both flags
+    false. It exists only so a sandbox reviewer can open the operational
+    workspace without repeatedly entering development credentials.
     """
-    if not settings.demo_mode or settings.environment == "production":
+    if not (settings.demo_mode or settings.disable_login) or settings.environment == "production":
         from app.core.errors import NotFoundError
         raise NotFoundError("Demo sign-in is not enabled.")
+    if settings.disable_login:
+        # Testing affordance: reviewers may point the app at a fresh or only
+        # partially seeded database, so make sure the configured demo account
+        # actually exists and is sign-in-able before authenticating.
+        from app.services.auth import ensure_demo_account
+        ensure_demo_account(db)
     result = AuthService(db).login(
         settings.demo_user_email,
         settings.demo_user_password,

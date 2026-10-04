@@ -11,6 +11,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
+from app.core.config import settings
 from app.core.errors import AuthenticationError, PermissionDeniedError
 from app.core.security import decode_token
 from app.db.enums import UserStatus
@@ -30,6 +31,21 @@ def _extract_access_token(request: Request, credentials: HTTPAuthorizationCreden
     return request.cookies.get("hms_access") or request.cookies.get("hms_session")
 
 
+def _demo_fallback_user(db: Session) -> User | None:
+    """While DISABLE_LOGIN is on, an absent/expired credential resolves to the
+    seeded development account instead of a 401.
+
+    This keeps the whole workspace usable with zero client-side session
+    handling (no cookies, no extra sign-in requests), which matters for
+    embedded/sandboxed previews where cookie storage and cross-request state
+    are unreliable.  Hard-disabled in production by configuration validation.
+    """
+    if not (settings.disable_login and not settings.is_production):
+        return None
+    from app.services.auth import ensure_demo_account
+    return ensure_demo_account(db)
+
+
 def get_current_user(
     request: Request,
     credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
@@ -37,25 +53,36 @@ def get_current_user(
 ) -> User:
     token = _extract_access_token(request, credentials)
     if not token:
-        raise AuthenticationError()
-    payload = decode_token(token, expected_type="access")
-    subject = payload.get("sub")
+        user = _demo_fallback_user(db)
+        if user is None:
+            raise AuthenticationError()
+        request.state.user = user
+        return user
     try:
-        user_id = UUID(str(subject))
-    except (ValueError, TypeError) as exc:
-        raise AuthenticationError("Invalid authentication subject.") from exc
+        payload = decode_token(token, expected_type="access")
+        subject = payload.get("sub")
+        try:
+            user_id = UUID(str(subject))
+        except (ValueError, TypeError) as exc:
+            raise AuthenticationError("Invalid authentication subject.") from exc
 
-    user = db.scalar(
-        select(User)
-        .where(User.id == user_id, User.deleted_at.is_(None))
-        .options(
-            selectinload(User.roles).selectinload(Role.permissions),
+        user = db.scalar(
+            select(User)
+            .where(User.id == user_id, User.deleted_at.is_(None))
+            .options(
+                selectinload(User.roles).selectinload(Role.permissions),
+            )
         )
-    )
-    if not user or user.status != UserStatus.ACTIVE:
-        raise AuthenticationError("This account is inactive. Contact an administrator.")
-    if user.is_locked:
-        raise AuthenticationError("This account is temporarily locked. Try again later.")
+        if not user or user.status != UserStatus.ACTIVE:
+            raise AuthenticationError("This account is inactive. Contact an administrator.")
+        if user.is_locked:
+            raise AuthenticationError("This account is temporarily locked. Try again later.")
+    except AuthenticationError:
+        # Stale/expired credentials must not strand a tester either.
+        fallback = _demo_fallback_user(db)
+        if fallback is None:
+            raise
+        user = fallback
     request.state.user = user
     return user
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import date
+from typing import Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Request, status
@@ -18,6 +19,7 @@ from app.db.session import get_db
 from app.schemas.common import Page, PaginationParams
 from app.schemas.domain import CancellationRequest, CheckInOut, CheckInRequest, CheckOutRequest, ReservationCreate, ReservationOut, ReservationUpdate
 from app.services.reservations import ReservationService
+from app.services.common import notify
 
 router = APIRouter(prefix="/reservations", tags=["Reservations"])
 
@@ -33,11 +35,18 @@ def find(db: Session, reservation_id: UUID) -> Reservation:
 
 
 @router.get("", response_model=Page[ReservationOut])
-def list_reservations(pagination: PaginationParams = Depends(), status_filter: ReservationStatus | None = Query(None, alias="status"), date_from: date | None = None, date_to: date | None = None, db: Session = Depends(get_db), _: User = Depends(require_permission("reservations:view"))):
+def list_reservations(pagination: PaginationParams = Depends(), status_filter: ReservationStatus | None = Query(None, alias="status"), date_from: date | None = None, date_to: date | None = None, view: Literal["arrivals", "departures", "in_house"] | None = None, db: Session = Depends(get_db), _: User = Depends(require_permission("reservations:view"))):
     q = query_base().where(Reservation.deleted_at.is_(None))
     if status_filter: q = q.where(Reservation.status == status_filter)
     if date_from: q = q.where(Reservation.check_in_date >= date_from)
     if date_to: q = q.where(Reservation.check_in_date <= date_to)
+    if view == "arrivals":
+        # Same semantics as the dashboard "arrivals today" figure.
+        q = q.where(Reservation.check_in_date == date.today(), Reservation.status.in_((ReservationStatus.PENDING, ReservationStatus.CONFIRMED, ReservationStatus.CHECKED_IN)))
+    elif view == "departures":
+        q = q.where(Reservation.check_out_date == date.today(), Reservation.status == ReservationStatus.CHECKED_IN)
+    elif view == "in_house":
+        q = q.where(Reservation.status == ReservationStatus.CHECKED_IN)
     if pagination.search:
         from app.db.models.guest import Guest
         term = f"%{pagination.search.lower()}%"
@@ -53,6 +62,7 @@ def list_reservations(pagination: PaginationParams = Depends(), status_filter: R
 def create_reservation(payload: ReservationCreate, request: Request, db: Session = Depends(get_db), user: User = Depends(require_permission("reservations:create"))):
     service = ReservationService(db, user, request)
     row = service.create(payload)
+    notify(db, user_id=user.id, title=f"New reservation {row.reference}", message=f"{row.guest.full_name} · {row.check_in_date} to {row.check_out_date}", category="reservation", link="/reservations", entity_type="reservation", entity_id=row.id, dedupe_key=f"res-created-{row.id}")
     db.commit(); db.refresh(row)
     return row
 
@@ -83,6 +93,7 @@ def check_in(reservation_id: UUID, payload: CheckInRequest, request: Request, db
 @router.post("/{reservation_id}/check-out", response_model=CheckInOut)
 def check_out(reservation_id: UUID, payload: CheckOutRequest, request: Request, db: Session = Depends(get_db), user: User = Depends(require_permission("reservations:check_out"))):
     row = ReservationService(db, user, request).check_out(find(db, reservation_id), payload)
+    notify(db, user_id=user.id, title="Check-out completed", message="The room was released and queued for housekeeping.", category="housekeeping", severity="warning", link="/housekeeping", dedupe_key=f"checkout-{row.reservation_id}")
     db.commit(); db.refresh(row); return row
 
 

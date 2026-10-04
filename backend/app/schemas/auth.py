@@ -64,6 +64,12 @@ class RefreshRequest(BaseModel):
     refresh_token: str | None = None
 
 
+class AuthConfig(BaseModel):
+    """Public, unauthenticated sign-in configuration consumed by the UI."""
+
+    login_disabled: bool = Field(default=False, description="When true the UI skips the login screen and opens the seeded test account automatically")
+
+
 class PasswordChangeRequest(BaseModel):
     current_password: str = Field(min_length=1, max_length=200)
     new_password: str = Field(min_length=8, max_length=200)
