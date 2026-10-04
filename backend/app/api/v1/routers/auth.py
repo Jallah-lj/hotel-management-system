@@ -5,14 +5,13 @@ clients without ever exposing a password or raw refresh session in logs."""
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Request, Response
-from sqlalchemy import func, select, update
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.config import settings
 from app.core.dependencies import get_current_user
 from app.core.errors import AuthenticationError
-from app.core.security import generate_opaque_token, hash_password, verify_password
-from app.db.enums import UserStatus
+from app.core.security import generate_opaque_token
 from app.db.models.user import RefreshToken, Role, User
 from app.db.session import get_db
 from app.schemas.auth import (
@@ -64,56 +63,7 @@ def _clear_auth_cookies(response: Response) -> None:
     response.delete_cookie(settings.csrf_cookie_name, path="/", domain=settings.cookie_domain)
 
 
-def _ensure_demo_account(db: Session) -> None:
-    """Provision/repair the configured development account on demand.
 
-    Only reachable while DISABLE_LOGIN is on (never in production).  When the
-    login screen is disabled the workspace must open even if the database is
-    fresh, was re-created, or the demo account drifted, so this guarantees the
-    account exists, is active, is unlocked and knows the configured password.
-    """
-    email = settings.demo_user_email.strip()
-    user = db.scalar(select(User).where(func.lower(User.email) == email.lower()))
-    if user is None:
-        role = db.scalar(select(Role).where(Role.code == "super_admin"))
-        if role is None:
-            role = Role(code="super_admin", name="Super Administrator", description="Development role created by DISABLE_LOGIN.", level=100, is_system=True)
-            db.add(role)
-            db.flush()
-        username = "admin"
-        if db.scalar(select(User).where(User.username == username)):
-            username = f"demo_admin_{email.split('@')[0][:24]}"
-        user = User(
-            email=email,
-            username=username,
-            first_name="Avery",
-            last_name="Morgan",
-            password_hash=hash_password(settings.demo_user_password),
-            job_title="General Manager",
-            department="Executive",
-            is_superuser=True,
-            must_change_password=False,
-            roles=[role],
-        )
-        db.add(user)
-        db.commit()
-        return
-    repaired = False
-    if not verify_password(settings.demo_user_password, user.password_hash):
-        user.password_hash = hash_password(settings.demo_user_password)
-        repaired = True
-    if user.status != UserStatus.ACTIVE:
-        user.status = UserStatus.ACTIVE
-        repaired = True
-    if user.locked_until is not None or user.failed_login_count:
-        user.locked_until = None
-        user.failed_login_count = 0
-        repaired = True
-    if user.deleted_at is not None:
-        user.deleted_at = None
-        repaired = True
-    if repaired:
-        db.commit()
 
 
 @router.post("/login", response_model=TokenInfo, summary="Sign in a staff member")
@@ -149,7 +99,8 @@ def demo_login(request: Request, response: Response, db: Session = Depends(get_d
         # Testing affordance: reviewers may point the app at a fresh or only
         # partially seeded database, so make sure the configured demo account
         # actually exists and is sign-in-able before authenticating.
-        _ensure_demo_account(db)
+        from app.services.auth import ensure_demo_account
+        ensure_demo_account(db)
     result = AuthService(db).login(
         settings.demo_user_email,
         settings.demo_user_password,

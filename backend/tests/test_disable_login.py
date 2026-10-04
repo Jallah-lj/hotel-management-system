@@ -31,6 +31,7 @@ def seeded_admin(db):
         first_name="Avery",
         last_name="Quinn",
         password_hash=hash_password(settings.demo_user_password),
+        is_superuser=True,
         roles=[role],
     )
     db.add(user)
@@ -47,6 +48,20 @@ def test_auth_config_reports_login_enabled_by_default(client):
 def test_demo_login_is_unavailable_when_login_is_enabled(client, seeded_admin):
     response = client.post("/api/v1/auth/demo-login")
     assert response.status_code == 404
+
+
+def test_disable_login_authenticates_protected_routes_without_credentials(client, disable_login, seeded_admin):
+    """No cookies, no tokens: every protected endpoint just works."""
+    me = client.get("/api/v1/auth/me")
+    assert me.status_code == 200
+    assert me.json()["email"] == settings.demo_user_email
+    assert client.get("/api/v1/dashboard").status_code == 200
+    assert client.get("/api/v1/reservations").status_code == 200
+
+
+def test_protected_routes_still_require_credentials_by_default(client, staff):
+    assert client.get("/api/v1/auth/me").status_code == 401
+    assert client.get("/api/v1/dashboard").status_code == 401
 
 
 def test_disable_login_provisions_missing_demo_account(client, disable_login):

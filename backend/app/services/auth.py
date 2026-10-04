@@ -32,6 +32,64 @@ from app.services.common import audit
 logger = logging.getLogger("app.auth.service")
 
 
+def ensure_demo_account(db: Session) -> User:
+    """Return the configured development account, creating/repairing it.
+
+    Only used while DISABLE_LOGIN or DEMO_MODE is on (never in production).
+    When the login screen is disabled the workspace must open even against a
+    fresh, partially seeded or drifted database, so this guarantees the
+    account exists, is active, is unlocked and knows the configured password.
+    """
+    email = settings.demo_user_email.strip()
+    user = db.scalar(select(User).where(func.lower(User.email) == email.lower()))
+    if user is None:
+        role = db.scalar(select(Role).where(Role.code == "super_admin"))
+        if role is None:
+            role = Role(code="super_admin", name="Super Administrator", description="Development role created by DISABLE_LOGIN.", level=100, is_system=True)
+            db.add(role)
+            db.flush()
+        username = "admin"
+        if db.scalar(select(User).where(User.username == username)):
+            username = f"demo_admin_{email.split('@')[0][:24]}"
+        user = User(
+            email=email,
+            username=username,
+            first_name="Avery",
+            last_name="Morgan",
+            password_hash=hash_password(settings.demo_user_password),
+            job_title="General Manager",
+            department="Executive",
+            is_superuser=True,
+            must_change_password=False,
+            roles=[role],
+        )
+        db.add(user)
+        db.commit()
+        return user
+    repaired = False
+    if not verify_password(settings.demo_user_password, user.password_hash):
+        user.password_hash = hash_password(settings.demo_user_password)
+        repaired = True
+    if user.status != UserStatus.ACTIVE:
+        user.status = UserStatus.ACTIVE
+        repaired = True
+    if user.locked_until is not None or user.failed_login_count:
+        user.locked_until = None
+        user.failed_login_count = 0
+        repaired = True
+    if user.deleted_at is not None:
+        user.deleted_at = None
+        repaired = True
+    if not user.is_superuser:
+        # The disabled-login workspace must open fully; promote the test
+        # account so every screen is reachable regardless of seeded roles.
+        user.is_superuser = True
+        repaired = True
+    if repaired:
+        db.commit()
+    return user
+
+
 class AuthService:
     def __init__(self, db: Session):
         self.db = db

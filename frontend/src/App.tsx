@@ -108,11 +108,17 @@ function App() {
       try {
         let sessionUser: User
         if (loginDisabled) {
-          // Login is disabled while the platform is being tested: skip session
-          // verification entirely and open the seeded development workspace
-          // directly (one request, no cookie dependency).
-          const session = await api<{ user: User }>('/auth/demo-login', { method: 'POST', signal: controller.signal })
-          sessionUser = session.user
+          // Login is disabled while the platform is being tested: the backend
+          // resolves /auth/me to the seeded development account, so one GET
+          // opens the workspace with no cookies and no sign-in request. If
+          // that still fails, fall back to the explicit demo sign-in.
+          try {
+            sessionUser = await api<User>('/auth/me', { signal: controller.signal })
+          } catch (meError) {
+            if (controller.signal.aborted) throw meError
+            const session = await api<{ user: User }>('/auth/demo-login', { method: 'POST', signal: controller.signal })
+            sessionUser = session.user
+          }
         } else {
           sessionUser = await api<User>('/auth/me', { signal: controller.signal })
         }
