@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import date
+from typing import Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Request, status
@@ -33,11 +34,18 @@ def find(db: Session, reservation_id: UUID) -> Reservation:
 
 
 @router.get("", response_model=Page[ReservationOut])
-def list_reservations(pagination: PaginationParams = Depends(), status_filter: ReservationStatus | None = Query(None, alias="status"), date_from: date | None = None, date_to: date | None = None, db: Session = Depends(get_db), _: User = Depends(require_permission("reservations:view"))):
+def list_reservations(pagination: PaginationParams = Depends(), status_filter: ReservationStatus | None = Query(None, alias="status"), date_from: date | None = None, date_to: date | None = None, view: Literal["arrivals", "departures", "in_house"] | None = None, db: Session = Depends(get_db), _: User = Depends(require_permission("reservations:view"))):
     q = query_base().where(Reservation.deleted_at.is_(None))
     if status_filter: q = q.where(Reservation.status == status_filter)
     if date_from: q = q.where(Reservation.check_in_date >= date_from)
     if date_to: q = q.where(Reservation.check_in_date <= date_to)
+    if view == "arrivals":
+        # Same semantics as the dashboard "arrivals today" figure.
+        q = q.where(Reservation.check_in_date == date.today(), Reservation.status.in_((ReservationStatus.PENDING, ReservationStatus.CONFIRMED, ReservationStatus.CHECKED_IN)))
+    elif view == "departures":
+        q = q.where(Reservation.check_out_date == date.today(), Reservation.status == ReservationStatus.CHECKED_IN)
+    elif view == "in_house":
+        q = q.where(Reservation.status == ReservationStatus.CHECKED_IN)
     if pagination.search:
         from app.db.models.guest import Guest
         term = f"%{pagination.search.lower()}%"
