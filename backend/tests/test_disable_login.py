@@ -64,6 +64,15 @@ def test_protected_routes_still_require_credentials_by_default(client, staff):
     assert client.get("/api/v1/dashboard").status_code == 401
 
 
+def test_admin_surfaces_reachable_in_test_mode(client, disable_login):
+    """The Settings page data endpoints work end to end without cookies."""
+    assert client.get("/api/v1/admin/users").status_code == 200
+    assert client.get("/api/v1/admin/roles").status_code == 200
+    assert client.get("/api/v1/admin/settings").status_code == 200
+    assert client.get("/api/v1/admin/payment-methods").status_code == 200
+    assert client.get("/api/v1/admin/audit-logs").status_code == 200
+
+
 def test_disable_login_provisions_missing_demo_account(client, disable_login):
     """A fresh/unseeded database must still open the workspace, not 401."""
     demo = client.post("/api/v1/auth/demo-login")

@@ -98,3 +98,17 @@ class SettingOut(ORMModel):
 
 class SettingUpdate(ORMModel):
     value: str | None = None
+
+
+class PaymentMethodOut(ORMModel):
+    id: UUID
+    code: str
+    name: str
+    type: str
+    requires_reference: bool
+    is_active: bool
+
+
+class PaymentMethodUpdate(ORMModel):
+    name: str | None = Field(default=None, min_length=1, max_length=64)
+    is_active: bool | None = None

@@ -14,9 +14,10 @@ from app.core.permissions import PERMISSIONS, ROLE_DEFINITIONS
 from app.core.security import hash_password, validate_password_strength
 from app.db.enums import UserStatus
 from app.db.models.operations import AuditLog, HotelSetting
+from app.db.models.billing import PaymentMethod
 from app.db.models.user import Permission, Role, User
 from app.db.session import get_db
-from app.schemas.admin import RoleCreate, RoleOut, RoleUpdate, SettingOut, SettingUpdate, UserCreate, UserOut, UserUpdate
+from app.schemas.admin import PaymentMethodOut, PaymentMethodUpdate, RoleCreate, RoleOut, RoleUpdate, SettingOut, SettingUpdate, UserCreate, UserOut, UserUpdate
 from app.schemas.auth import PermissionOut, RoleBrief
 from app.schemas.common import Message, Page, PaginationParams
 from app.services.common import audit
@@ -25,7 +26,7 @@ router = APIRouter(prefix="/admin", tags=["Administration"])
 
 
 def user_out(user: User) -> UserOut:
-    return UserOut(id=user.id, email=user.email, username=user.username, first_name=user.first_name, last_name=user.last_name, full_name=user.full_name, phone=user.phone, job_title=user.job_title, employee_code=user.employee_code, department=user.department, status=user.status.value, is_superuser=user.is_superuser, must_change_password=user.must_change_password, roles=[RoleBrief(id=r.id, code=r.code, name=r.name, level=r.level) for r in user.roles if r.is_active], created_at=user.created_at, last_login_at=user.last_login_at)
+    return UserOut(id=user.id, email=user.email, username=user.username, first_name=user.first_name, last_name=user.last_name, full_name=user.full_name, phone=user.phone, job_title=user.job_title, employee_code=user.employee_code, department=user.department, status=user.status.value, is_superuser=user.is_superuser, must_change_password=user.must_change_password, roles=[RoleBrief(id=str(r.id), code=r.code, name=r.name, level=r.level) for r in user.roles if r.is_active], created_at=user.created_at, last_login_at=user.last_login_at)
 
 
 @router.get("/users", response_model=Page[UserOut])
@@ -107,7 +108,10 @@ def list_permissions(_: User = Depends(require_permission("roles:view"))):
 
 @router.get("/settings", response_model=list[SettingOut])
 def list_settings(db: Session = Depends(get_db), _: User = Depends(require_permission("settings:view"))):
-    return list(db.scalars(select(HotelSetting).where(HotelSetting.is_public.is_(True)).order_by(HotelSetting.group_name, HotelSetting.sort_order)).all())
+    # Authenticated administrators see the full configuration, including
+    # private operational values (tax rate, ledger sequences); is_public only
+    # governs guest-facing exposure elsewhere.
+    return list(db.scalars(select(HotelSetting).order_by(HotelSetting.group_name, HotelSetting.sort_order)).all())
 
 
 @router.patch("/settings/{key}", response_model=SettingOut)
@@ -116,6 +120,21 @@ def update_setting(key: str, payload: SettingUpdate, request: Request, db: Sessi
     if not row: raise NotFoundError("Setting not found.")
     if not row.editable: raise ConflictError("This system setting is not editable.")
     row.value = payload.value; row.updated_by_id = actor.id; audit(db, user=actor, action="settings_change", resource="hotel_settings", resource_id=row.id, request=request); db.commit(); db.refresh(row); return row
+
+
+@router.get("/payment-methods", response_model=list[PaymentMethodOut])
+def list_payment_methods(db: Session = Depends(get_db), _: User = Depends(require_permission("settings:view"))):
+    return list(db.scalars(select(PaymentMethod).order_by(PaymentMethod.sort_order, PaymentMethod.name)).all())
+
+
+@router.patch("/payment-methods/{method_id}", response_model=PaymentMethodOut)
+def update_payment_method(method_id: UUID, payload: PaymentMethodUpdate, request: Request, db: Session = Depends(get_db), actor: User = Depends(require_permission("settings:manage"))):
+    row = db.get(PaymentMethod, method_id)
+    if not row: raise NotFoundError("Payment method not found.")
+    if payload.name is not None: row.name = payload.name
+    if payload.is_active is not None: row.is_active = payload.is_active
+    audit(db, user=actor, action="payment_method_change", resource="payment_methods", resource_id=row.id, request=request)
+    db.commit(); db.refresh(row); return row
 
 
 @router.get("/audit-logs")

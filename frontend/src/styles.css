@@ -61,3 +61,29 @@
 @keyframes toast-in { from { transform:translateY(6px); opacity:0; } to { transform:none; opacity:1; } }
 .modal-form textarea { border:1px solid #d7e0e5; border-radius:5px; padding:10px 12px; outline:none; font:inherit; font-size:12px; color:var(--navy); resize:vertical; min-height:72px; background:#fff; }
 .modal-form textarea:focus { border-color:var(--teal); box-shadow:0 0 0 3px rgba(44,140,123,.1); }
+
+/* Settings workspace */
+.settings-panel { padding:0; overflow:hidden; margin-bottom:18px; }
+.settings-head { display:flex; justify-content:space-between; align-items:center; gap:16px; padding:20px 22px 0; }
+.settings-head h3 { margin:0; font-size:14px; font-weight:700; color:var(--navy); }
+.settings-head span { display:block; font-size:11px; color:#95a1aa; margin-top:3px; }
+.settings-form { display:grid; grid-template-columns:1fr 1fr; gap:16px; padding:18px 22px 22px; }
+.settings-form label { display:flex; flex-direction:column; gap:7px; color:#506878; font-size:11px; font-weight:600; }
+.settings-form label.full { grid-column:1 / -1; }
+.settings-form input { height:41px; border:1px solid #d7e0e5; border-radius:5px; padding:0 12px; font-size:12px; color:var(--navy); background:#fff; outline:none; }
+.settings-form input:focus { border-color:var(--teal); box-shadow:0 0 0 3px rgba(44,140,123,.1); }
+.settings-form input:disabled { background:#f4f7f8; color:#8b98a3; }
+.settings-toolbar { display:flex; justify-content:space-between; align-items:center; margin-bottom:14px; gap:12px; }
+.settings-toolbar-copy strong { font-size:13px; color:var(--navy); display:block; }
+.settings-toolbar-copy span { font-size:11px; color:#94a1ab; }
+.role-chips { display:flex; flex-wrap:wrap; gap:10px; padding:16px 22px 22px; }
+.role-chip { border:1px solid var(--line); background:#f8fafb; border-radius:8px; padding:10px 12px; display:flex; flex-direction:column; gap:3px; }
+.role-chip strong { font-size:12px; color:var(--navy); }
+.role-chip span { font-size:10px; color:#8b98a3; }
+.method-list { padding:8px 22px 18px; display:flex; flex-direction:column; }
+.method-row { display:flex; justify-content:space-between; align-items:center; padding:12px 0; border-bottom:1px solid #eef1f3; }
+.method-row:last-child { border-bottom:0; }
+.method-row > div { display:flex; flex-direction:column; gap:2px; }
+.method-row strong { font-size:12px; color:var(--navy); }
+.method-row span { font-size:10px; color:#8b98a3; }
+@media (max-width:780px) { .settings-form { grid-template-columns:1fr; } }
