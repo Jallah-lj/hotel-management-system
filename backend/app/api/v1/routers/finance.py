@@ -28,8 +28,9 @@ router = APIRouter(tags=["Finance"])
 
 
 @router.get("/payments", response_model=Page[PaymentOut])
-def list_payments(pagination: PaginationParams = Depends(), date_from: date | None = None, date_to: date | None = None, db: Session = Depends(get_db), _: User = Depends(require_permission("payments:view"))):
+def list_payments(pagination: PaginationParams = Depends(), date_from: date | None = None, date_to: date | None = None, entry_filter: PaymentEntryType | None = Query(None, alias="entry"), db: Session = Depends(get_db), _: User = Depends(require_permission("payments:view"))):
     q = select(Payment).where(Payment.deleted_at.is_(None))
+    if entry_filter: q = q.where(Payment.entry_type == entry_filter)
     if date_from: q = q.where(func.date(Payment.paid_at) >= date_from)
     if date_to: q = q.where(func.date(Payment.paid_at) <= date_to)
     if pagination.search: q = q.where(Payment.number.ilike(f"%{pagination.search}%"))
