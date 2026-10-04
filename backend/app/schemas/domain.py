@@ -24,6 +24,8 @@ from app.db.enums import (
     InvoiceStatus,
     MaintenanceCategory,
     MaintenanceStatus,
+    NotificationCategory,
+    NotificationSeverity,
     OrderStatus,
     OrderType,
     PaymentMethodType,
@@ -669,6 +671,20 @@ class MaintenanceTicketOut(ORMModel):
     resolution_notes: str | None = None
     cost: Decimal
     blocks_room: bool
+
+
+class NotificationOut(ORMModel):
+    id: UUID
+    category: NotificationCategory
+    severity: NotificationSeverity
+    title: str
+    message: str
+    link: str | None = None
+    entity_type: str | None = None
+    entity_id: str | None = None
+    is_read: bool
+    read_at: datetime | None = None
+    created_at: datetime
 
 
 class ExpenseCreate(ORMModel):

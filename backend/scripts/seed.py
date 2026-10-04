@@ -97,6 +97,12 @@ def main() -> None:
             db.add(housekeeper)
         db.flush()
 
+        from app.services.common import notify
+        notify(db, user_id=admin.id, title="Arrivals today", message="An arrival is due today; review the front desk queue.", category="reservation", link="/reservations", dedupe_key="seed-arrivals")
+        notify(db, user_id=admin.id, title="Maintenance ticket open", message="A priority ticket is open in engineering and may block a room.", category="maintenance", severity="warning", link="/maintenance", dedupe_key="seed-maintenance")
+        notify(db, user_id=admin.id, title="Housekeeping queue", message="Rooms are waiting on housekeeping attention before the next arrival.", category="housekeeping", link="/housekeeping", dedupe_key="seed-housekeeping")
+        db.flush()
+
         if db.scalar(select(Room.id).limit(1)):
             print("Aurora Grand catalogue and accounts already exist; no sample property records added.")
             return

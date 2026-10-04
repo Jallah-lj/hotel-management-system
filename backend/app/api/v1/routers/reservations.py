@@ -19,6 +19,7 @@ from app.db.session import get_db
 from app.schemas.common import Page, PaginationParams
 from app.schemas.domain import CancellationRequest, CheckInOut, CheckInRequest, CheckOutRequest, ReservationCreate, ReservationOut, ReservationUpdate
 from app.services.reservations import ReservationService
+from app.services.common import notify
 
 router = APIRouter(prefix="/reservations", tags=["Reservations"])
 
@@ -61,6 +62,7 @@ def list_reservations(pagination: PaginationParams = Depends(), status_filter: R
 def create_reservation(payload: ReservationCreate, request: Request, db: Session = Depends(get_db), user: User = Depends(require_permission("reservations:create"))):
     service = ReservationService(db, user, request)
     row = service.create(payload)
+    notify(db, user_id=user.id, title=f"New reservation {row.reference}", message=f"{row.guest.full_name} · {row.check_in_date} to {row.check_out_date}", category="reservation", link="/reservations", entity_type="reservation", entity_id=row.id, dedupe_key=f"res-created-{row.id}")
     db.commit(); db.refresh(row)
     return row
 
@@ -91,6 +93,7 @@ def check_in(reservation_id: UUID, payload: CheckInRequest, request: Request, db
 @router.post("/{reservation_id}/check-out", response_model=CheckInOut)
 def check_out(reservation_id: UUID, payload: CheckOutRequest, request: Request, db: Session = Depends(get_db), user: User = Depends(require_permission("reservations:check_out"))):
     row = ReservationService(db, user, request).check_out(find(db, reservation_id), payload)
+    notify(db, user_id=user.id, title="Check-out completed", message="The room was released and queued for housekeeping.", category="housekeeping", severity="warning", link="/housekeeping", dedupe_key=f"checkout-{row.reservation_id}")
     db.commit(); db.refresh(row); return row
 
 

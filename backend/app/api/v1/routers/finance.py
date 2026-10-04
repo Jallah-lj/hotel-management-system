@@ -22,6 +22,7 @@ from app.schemas.common import Page, PaginationParams
 from app.schemas.domain import ExpenseCreate, ExpenseOut, InvoiceOut, PaymentCreate, PaymentOut, RefundCreate
 from app.services.operations import OperationsService
 from app.services.payments import PaymentService
+from app.services.common import notify
 from app.services.reservations import ReservationService
 
 router = APIRouter(tags=["Finance"])
@@ -44,6 +45,7 @@ def create_payment(payload: PaymentCreate, request: Request, db: Session = Depen
     reservation = db.get(Reservation, payload.reservation_id)
     if not reservation: raise NotFoundError("Reservation not found.")
     row = PaymentService(db, user, request).create(reservation, payload.amount, payload.method, payload.reference, payload.notes)
+    notify(db, user_id=user.id, title=f"Payment {row.number} recorded", message=f"{row.amount} {row.currency} via {row.method_label}", category="payment", link="/finance", entity_type="payment", entity_id=row.id, dedupe_key=f"pay-created-{row.id}")
     db.commit(); db.refresh(row); return row
 
 
@@ -52,6 +54,7 @@ def refund_payment(payment_id: UUID, payload: RefundCreate, request: Request, db
     row = db.get(Payment, payment_id)
     if not row: raise NotFoundError("Payment not found.")
     result = PaymentService(db, user, request).refund(row, payload.amount, payload.reason)
+    notify(db, user_id=user.id, title=f"Refund {result.number} issued", message=f"{result.amount} {result.currency} returned via {result.method_label}", category="payment", severity="warning", link="/finance", entity_type="payment", entity_id=result.id, dedupe_key=f"refund-created-{result.id}")
     db.commit(); db.refresh(result); return result
 
 
