@@ -80,59 +80,60 @@ function App() {
   const bootstrapController = useRef<AbortController | null>(null)
   useEffect(() => {
     let active = true
+    // Never strand the UI on a spinner if the configuration probe cannot
+    // complete (slow or restrictive preview proxies): fall back to the normal
+    // login page. The first resolution wins so a late response cannot flip
+    // the mode after the user has already acted.
+    const fallback = setTimeout(() => { if (active) setAuthConfig((prev) => prev ?? { login_disabled: false }) }, 6000)
     api<{ login_disabled: boolean }>('/auth/config')
-      .then((config) => { if (active) setAuthConfig(config) })
-      .catch(() => { if (active) setAuthConfig({ login_disabled: false }) })
-    return () => { active = false }
+      .then((config) => { if (active) setAuthConfig((prev) => prev ?? config) })
+      .catch(() => { if (active) setAuthConfig((prev) => prev ?? { login_disabled: false }) })
+      .finally(() => clearTimeout(fallback))
+    return () => { active = false; clearTimeout(fallback) }
   }, [])
   useEffect(() => {
     if (!shouldRestoreSession) return
     const controller = new AbortController()
     let cancelled = false
     bootstrapController.current = controller
+    // Never spin forever if the workspace cannot be opened: surface a retry
+    // error instead of an endless loading screen.
+    const watchdog = setTimeout(() => controller.abort(), 20000)
     const bootstrap = async () => {
       setChecking(true)
-      if (isPreviewHost()) console.info('[AUTH] restoring session')
+      if (isPreviewHost()) console.info('[AUTH] restoring session', { loginDisabled })
       try {
-        const verified = await api<User>('/auth/me', { signal: controller.signal })
+        let sessionUser: User
+        if (loginDisabled) {
+          // Login is disabled while the platform is being tested: skip session
+          // verification entirely and open the seeded development workspace
+          // directly (one request, no cookie dependency).
+          const session = await api<{ user: User }>('/auth/demo-login', { method: 'POST', signal: controller.signal })
+          sessionUser = session.user
+        } else {
+          sessionUser = await api<User>('/auth/me', { signal: controller.signal })
+        }
         if (cancelled) return
-        if (isPreviewHost()) console.info('[AUTH] session restored', { email: verified.email })
-        rememberUser(verified)
-        setUser(verified)
+        if (isPreviewHost()) console.info('[AUTH] session ready', { email: sessionUser.email })
+        rememberUser(sessionUser)
+        setUser(sessionUser)
         setAuthError('')
-        if (location.pathname === '/') navigate('/dashboard', { replace: true })
+        if (location.pathname === '/' || location.pathname === '/login') navigate('/dashboard', { replace: true })
       } catch (error) {
-        if (cancelled || controller.signal.aborted) {
-          if (isPreviewHost()) console.info('[AUTH] stale session restore cancelled')
+        if (cancelled) return
+        if (controller.signal.aborted) {
+          setAuthError('The workspace took too long to respond. Please try again.')
           return
         }
         if (isPreviewHost()) console.info('[AUTH] session restore failed', { status: error instanceof ApiRequestError ? error.status : 0, message: error instanceof Error ? error.message : 'unknown error' })
         if (error instanceof ApiRequestError && error.status === 401) {
           clearSession()
           setUser(null)
-          if (loginDisabled) {
-            // Login is disabled while the platform is being tested: open the
-            // seeded development workspace automatically instead of showing
-            // the sign-in screen.
-            try {
-              if (isPreviewHost()) console.info('[AUTH] login disabled; opening the seeded test workspace')
-              const session = await api<{ user: User }>('/auth/demo-login', { method: 'POST', signal: controller.signal })
-              if (cancelled) return
-              rememberUser(session.user)
-              setUser(session.user)
-              setAuthError('')
-              if (isPreviewHost()) console.info('[AUTH] test workspace opened', { email: session.user.email })
-              if (location.pathname === '/' || location.pathname === '/login') navigate('/dashboard', { replace: true })
-              return
-            } catch (autoError) {
-              if (cancelled || controller.signal.aborted) return
-              setAuthError(autoError instanceof Error ? autoError.message : 'Unable to open the test workspace.')
-            }
-          }
         } else {
           setAuthError(error instanceof Error ? error.message : 'Unable to verify your hotel session.')
         }
       } finally {
+        clearTimeout(watchdog)
         if (!cancelled) setChecking(false)
       }
     }
