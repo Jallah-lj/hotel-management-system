@@ -9,7 +9,7 @@ from decimal import Decimal
 
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import StreamingResponse
-from sqlalchemy import Date, cast, func, select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.dependencies import require_any_permission
@@ -33,7 +33,7 @@ def dates(date_from: date | None, date_to: date | None):
 @router.get("/revenue", response_model=ReportOut)
 def revenue_report(date_from: date | None = None, date_to: date | None = None, db: Session = Depends(get_db), _: User = Depends(require_any_permission("reports:view", "reports:financial"))):
     start, end = dates(date_from, date_to)
-    rows = db.execute(select(cast(Payment.paid_at, Date), func.sum(Payment.amount)).where(Payment.entry_type == PaymentEntryType.PAYMENT, Payment.status == PaymentStatus.PAID, cast(Payment.paid_at, Date) >= start, cast(Payment.paid_at, Date) <= end).group_by(cast(Payment.paid_at, Date)).order_by(cast(Payment.paid_at, Date))).all()
+    rows = db.execute(select(func.date(Payment.paid_at), func.sum(Payment.amount)).where(Payment.entry_type == PaymentEntryType.PAYMENT, Payment.status == PaymentStatus.PAID, func.date(Payment.paid_at) >= start, func.date(Payment.paid_at) <= end).group_by(func.date(Payment.paid_at)).order_by(func.date(Payment.paid_at))).all()
     total = sum((Decimal(str(r[1] or 0)) for r in rows), Decimal("0"))
     return ReportOut(name="Revenue report", generated_at=datetime.now(UTC), date_from=start, date_to=end, summary={"total_revenue": total, "payment_count": len(rows)}, series=[ChartPoint(label=str(r[0]), value=r[1] or 0) for r in rows])
 
@@ -60,9 +60,34 @@ def expense_report(date_from: date | None = None, date_to: date | None = None, d
     return ReportOut(name="Expense report", generated_at=datetime.now(UTC), date_from=start, date_to=end, summary={"total_expenses": total, "categories": len(rows)}, series=[ChartPoint(label=str(r[0].value if hasattr(r[0], 'value') else r[0]).replace('_',' ').title(), value=r[1] or 0) for r in rows])
 
 
+@router.get("/reservations", response_model=ReportOut)
+def reservations_report(date_from: date | None = None, date_to: date | None = None, db: Session = Depends(get_db), _: User = Depends(require_any_permission("reports:view", "reports:financial"))):
+    start, end = dates(date_from, date_to)
+    day = func.date(Reservation.created_at)
+    base = select(func.count(Reservation.id)).where(Reservation.deleted_at.is_(None), day >= start, day <= end)
+    rows = db.execute(select(day, func.count(Reservation.id)).where(Reservation.deleted_at.is_(None), day >= start, day <= end).group_by(day).order_by(day)).all()
+    total = db.scalar(base) or 0
+    nights = db.scalar(select(func.sum(Reservation.nights)).where(Reservation.deleted_at.is_(None), day >= start, day <= end)) or 0
+    value = db.scalar(select(func.sum(Reservation.total_amount)).where(Reservation.deleted_at.is_(None), day >= start, day <= end)) or 0
+    mix = db.execute(select(Reservation.status, func.count(Reservation.id)).where(Reservation.deleted_at.is_(None), day >= start, day <= end).group_by(Reservation.status)).all()
+    status_mix = [{"label": (s.value if hasattr(s, "value") else str(s)).replace("_", " ").title(), "value": int(c)} for s, c in mix]
+    return ReportOut(name="Reservations report", generated_at=datetime.now(UTC), date_from=start, date_to=end, summary={"total_reservations": int(total), "room_nights": int(nights), "booking_value": Decimal(str(value)).quantize(Decimal("0.01")), "status_mix": status_mix}, series=[ChartPoint(label=str(r[0]), value=int(r[1])) for r in rows])
+
+
+@router.get("/housekeeping", response_model=ReportOut)
+def housekeeping_report(date_from: date | None = None, date_to: date | None = None, db: Session = Depends(get_db), _: User = Depends(require_any_permission("reports:view", "reports:financial"))):
+    start, end = dates(date_from, date_to)
+    day = func.date(HousekeepingTask.completed_at)
+    rows = db.execute(select(day, func.count(HousekeepingTask.id)).where(HousekeepingTask.completed_at.is_not(None), day >= start, day <= end).group_by(day).order_by(day)).all()
+    completed = int(sum(r[1] for r in rows))
+    inspected = db.scalar(select(func.count(HousekeepingTask.id)).where(HousekeepingTask.completed_at.is_not(None), HousekeepingTask.status == "inspected", day >= start, day <= end)) or 0
+    backlog = db.scalar(select(func.count(HousekeepingTask.id)).where(HousekeepingTask.status.in_(("pending", "in_progress")))) or 0
+    return ReportOut(name="Housekeeping report", generated_at=datetime.now(UTC), date_from=start, date_to=end, summary={"completed_in_range": completed, "inspected_in_range": int(inspected), "open_backlog": int(backlog)}, series=[ChartPoint(label=str(r[0]), value=int(r[1])) for r in rows])
+
+
 @router.get("/revenue.csv")
 def revenue_csv(date_from: date | None = None, date_to: date | None = None, db: Session = Depends(get_db), _: User = Depends(require_any_permission("reports:export", "reports:financial"))):
     start, end = dates(date_from, date_to)
-    rows = db.execute(select(cast(Payment.paid_at, Date), Payment.method_label, Payment.number, Payment.amount).where(Payment.entry_type == PaymentEntryType.PAYMENT, Payment.status == PaymentStatus.PAID, cast(Payment.paid_at, Date) >= start, cast(Payment.paid_at, Date) <= end).order_by(Payment.paid_at)).all()
+    rows = db.execute(select(func.date(Payment.paid_at), Payment.method_label, Payment.number, Payment.amount).where(Payment.entry_type == PaymentEntryType.PAYMENT, Payment.status == PaymentStatus.PAID, func.date(Payment.paid_at) >= start, func.date(Payment.paid_at) <= end).order_by(Payment.paid_at)).all()
     out = io.StringIO(); writer = csv.writer(out); writer.writerow(["Date", "Payment", "Method", "Amount"]); writer.writerows(rows)
     return StreamingResponse(iter([out.getvalue()]), media_type="text/csv", headers={"Content-Disposition": f'attachment; filename="revenue-{start}-{end}.csv"'})

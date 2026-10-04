@@ -413,7 +413,102 @@ function downloadCsv(filename: string, rows: (string | number)[][]) {
   URL.revokeObjectURL(url)
 }
 
-function ReportsPage() { const [report, setReport] = useState<{ summary: { total_revenue?: string; payment_count?: number }; series: { label: string; value: string }[] } | null>(null); useEffect(() => { api<typeof report>('/reports/revenue').then(setReport).catch(() => undefined) }, []); return <><PageHeader eyebrow="INSIGHTS" title="Reports" subtitle="The signals behind confident operating decisions." /><div className="report-tabs"><button className="active">Revenue</button><button>Occupancy</button><button>Reservations</button><button>Expenses</button><button>Housekeeping</button></div><section className="report-hero panel"><div><span className="eyebrow">REVENUE PERFORMANCE</span><h2>${money(report?.summary.total_revenue)}</h2><p className="muted">Total recorded revenue · last 30 days</p></div><div className="report-actions"><button className="secondary-button"><CalendarDays size={15} />Last 30 days</button><button className="secondary-button"><FileText size={15} />Export</button></div></section><section className="panel report-chart"><PanelTitle title="Daily revenue" meta="USD · All payment methods" />{report && <ResponsiveContainer width="100%" height={300}><BarChart data={report.series}><CartesianGrid vertical={false} stroke="#e8edf1" /><XAxis dataKey="label" tickLine={false} axisLine={false} tick={{ fill: '#82909d', fontSize: 11 }} interval={3} /><YAxis tickLine={false} axisLine={false} tick={{ fill: '#82909d', fontSize: 11 }} /><Tooltip formatter={(v) => [`$${money(String(v))}`, 'Revenue']} /><Bar dataKey="value" fill="#2c8c7b" radius={[3, 3, 0, 0]} /></BarChart></ResponsiveContainer>}</section></> }
+type ReportPoint = { label: string; value: number | string; secondary?: number | string | null }
+type ReportData = { name: string; generated_at: string; date_from: string; date_to: string; summary: Record<string, unknown>; series: ReportPoint[] }
+type ReportTab = 'revenue' | 'occupancy' | 'reservations' | 'expenses' | 'housekeeping'
+const REPORT_TABS: ReportTab[] = ['revenue', 'occupancy', 'reservations', 'expenses', 'housekeeping']
+const REPORT_META: Record<ReportTab, { title: string; meta: string; color: string }> = {
+  revenue: { title: 'Daily revenue', meta: 'USD · Paid charges only', color: '#2c8c7b' },
+  occupancy: { title: 'Daily occupancy', meta: '% of bookable rooms occupied', color: '#2c8c7b' },
+  reservations: { title: 'New reservations', meta: 'By booking date', color: '#5d84b2' },
+  expenses: { title: 'Spend by category', meta: 'USD · All recorded expenses', color: '#d57f6b' },
+  housekeeping: { title: 'Rooms cleaned', meta: 'Completed housekeeping tasks', color: '#e5b567' },
+}
+const MIX_COLORS = ['#2c8c7b', '#5d84b2', '#e5b567', '#d57f6b', '#9aa8b0', '#c48ac9']
+function isoShift(daysBack: number) { const d = new Date(); d.setDate(d.getDate() - daysBack); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` }
+function rnum(v: unknown) { return Number(v ?? 0) }
+function reportKpis(tab: ReportTab, report: ReportData | null, days: number) {
+  if (!report) return []
+  const s = report.summary
+  const best = report.series.reduce<ReportPoint | null>((acc, p) => (!acc || rnum(p.value) > rnum(acc.value) ? p : acc), null)
+  switch (tab) {
+    case 'revenue': { const total = rnum(s.total_revenue); return [
+      { label: 'Total revenue', value: `$${money(String(total))}`, hint: `${rnum(s.payment_count)} days with payments` },
+      { label: 'Average per day', value: `$${money(String(Math.round(total / days)))}`, hint: `Spread over ${days} days` },
+      { label: 'Best day', value: best ? `$${money(String(rnum(best.value)))}` : '—', hint: best ? best.label : 'No payments in range' }] }
+    case 'occupancy': { const peak = report.series.reduce<ReportPoint | null>((acc, p) => (!acc || rnum(p.value) > rnum(acc.value) ? p : acc), null); return [
+      { label: 'Average occupancy', value: `${rnum(s.average_occupancy)}%`, hint: `Across ${rnum(s.rooms)} bookable rooms` },
+      { label: 'Peak day', value: peak ? `${rnum(peak.value)}%` : '—', hint: peak ? peak.label : 'No stays in range' },
+      { label: 'Room-nights sold', value: String(report.series.reduce((acc, p) => acc + rnum(p.secondary), 0)), hint: 'Occupied room-nights in range' }] }
+    case 'reservations': { return [
+      { label: 'New reservations', value: String(rnum(s.total_reservations)), hint: 'Booked inside this range' },
+      { label: 'Room-nights', value: String(rnum(s.room_nights)), hint: 'Total nights sold' },
+      { label: 'Booking value', value: `$${money(String(rnum(s.booking_value)))}`, hint: 'Folio totals for these bookings' }] }
+    case 'expenses': { const total = rnum(s.total_expenses); const top = report.series[0]; return [
+      { label: 'Total spend', value: `$${money(String(total))}`, hint: `${rnum(s.categories)} expense categories` },
+      { label: 'Average per day', value: `$${money(String(Math.round(total / days)))}`, hint: `Spread over ${days} days` },
+      { label: 'Largest category', value: top ? top.label : '—', hint: top ? `$${money(String(rnum(top.value)))}` : 'No expenses in range' }] }
+    case 'housekeeping': { return [
+      { label: 'Rooms cleaned', value: String(rnum(s.completed_in_range)), hint: 'Tasks completed in range' },
+      { label: 'Inspected', value: String(rnum(s.inspected_in_range)), hint: 'Passed inspection in range' },
+      { label: 'Open backlog', value: String(rnum(s.open_backlog)), hint: 'Pending or in progress right now' }] }
+  }
+}
+function ReportChart({ tab, report, days }: { tab: ReportTab; report: ReportData; days: number }) {
+  const meta = REPORT_META[tab]
+  const data = report.series.map((p) => ({ label: tab === 'expenses' ? p.label : p.label.slice(5), full: p.label, value: rnum(p.value), secondary: rnum(p.secondary) }))
+  const interval = Math.max(0, Math.ceil(data.length / 14) - 1)
+  const tipStyle = { border: '1px solid #d9e2ec', borderRadius: 8, boxShadow: '0 8px 24px rgba(16,42,67,.1)' }
+  const fmt = (value: number): [string, string] => tab === 'revenue' || tab === 'expenses' ? [`$${money(String(value))}`, tab === 'revenue' ? 'Revenue' : 'Spend'] : tab === 'occupancy' ? [`${value}%`, 'Occupancy'] : [String(value), tab === 'reservations' ? 'New reservations' : 'Rooms cleaned']
+  if (tab === 'occupancy') return <ResponsiveContainer width="100%" height={300}><AreaChart data={data}><defs><linearGradient id="occFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#2c8c7b" stopOpacity={0.24} /><stop offset="100%" stopColor="#2c8c7b" stopOpacity={0} /></linearGradient></defs><CartesianGrid vertical={false} stroke="#e8edf1" /><XAxis dataKey="label" tickLine={false} axisLine={false} tick={{ fill: '#82909d', fontSize: 11 }} interval={interval} /><YAxis domain={[0, 100]} tickLine={false} axisLine={false} tick={{ fill: '#82909d', fontSize: 11 }} tickFormatter={(v) => `${v}%`} width={40} /><Tooltip contentStyle={tipStyle} labelFormatter={(_, payload) => (payload?.[0]?.payload as { full?: string })?.full ?? ''} formatter={(value) => fmt(Number(value))} /><Area type="monotone" dataKey="value" stroke={meta.color} strokeWidth={2.5} fill="url(#occFill)" /></AreaChart></ResponsiveContainer>
+  return <ResponsiveContainer width="100%" height={300}><BarChart data={data}><CartesianGrid vertical={false} stroke="#e8edf1" /><XAxis dataKey="label" tickLine={false} axisLine={false} tick={{ fill: '#82909d', fontSize: 11 }} interval={interval} /><YAxis tickLine={false} axisLine={false} tick={{ fill: '#82909d', fontSize: 11 }} tickFormatter={(v) => tab === 'revenue' || tab === 'expenses' ? `$${v}` : String(v)} width={tab === 'revenue' || tab === 'expenses' ? 52 : 34} /><Tooltip contentStyle={tipStyle} labelFormatter={(_, payload) => (payload?.[0]?.payload as { full?: string })?.full ?? ''} formatter={(value) => fmt(Number(value))} cursor={{ fill: 'rgba(44,140,123,.06)' }} /><Bar dataKey="value" fill={meta.color} radius={[3, 3, 0, 0]} maxBarSize={38} /></BarChart></ResponsiveContainer>
+}
+function ReportsPage() {
+  const [tab, setTab] = useState<ReportTab>('revenue')
+  const [from, setFrom] = useState(() => isoShift(29))
+  const [to, setTo] = useState(() => isoShift(0))
+  const [report, setReport] = useState<ReportData | null>(null)
+  const [loading, setLoading] = useState(false)
+  useEffect(() => {
+    let stale = false
+    setLoading(true)
+    api<ReportData>(`/reports/${tab}?date_from=${from}&date_to=${to}`).then((r) => { if (!stale) { setReport(r); setLoading(false) } }).catch((e) => { if (!stale) { setReport(null); setLoading(false); toast(e instanceof Error ? e.message : 'Could not load the report.', 'err') } })
+    return () => { stale = true }
+  }, [tab, from, to])
+  const days = useMemo(() => Math.max(1, Math.round((new Date(to).getTime() - new Date(from).getTime()) / 86400000) + 1), [from, to])
+  const setRange = (n: number) => { setFrom(isoShift(n - 1)); setTo(isoShift(0)) }
+  const meta = REPORT_META[tab]
+  const kpis = reportKpis(tab, report, days)
+  const mix = tab === 'reservations' && report ? ((report.summary.status_mix ?? []) as { label: string; value: number }[]) : []
+  const exportReport = () => {
+    if (!report) return
+    const headers: Record<ReportTab, (string | number)[]> = { revenue: ['Date', 'Revenue USD'], occupancy: ['Date', 'Occupancy %', 'Rooms occupied'], reservations: ['Date', 'New reservations'], expenses: ['Category', 'Total USD'], housekeeping: ['Date', 'Rooms cleaned'] }
+    downloadCsv(`${tab}-report-${report.date_from}-to-${report.date_to}.csv`, [headers[tab], ...report.series.map((p) => (tab === 'occupancy' ? [p.label, rnum(p.value), rnum(p.secondary)] : [p.label, rnum(p.value)]))])
+    toast('Report exported as CSV')
+  }
+  const emptyCopy: Record<ReportTab, [string, string]> = { revenue: ['No revenue recorded', 'No paid charges landed in this date range.'], occupancy: ['No occupied rooms', 'No stayed reservations overlap this date range.'], reservations: ['No reservations booked', 'No bookings were created inside this date range.'], expenses: ['No expenses recorded', 'No spend was logged in this date range.'], housekeeping: ['No rooms cleaned', 'No housekeeping tasks were completed in this range.'] }
+  return <><PageHeader eyebrow="INSIGHTS" title="Reports" subtitle="The signals behind confident operating decisions." />
+    <div className="report-tabs">{REPORT_TABS.map((t) => <button key={t} className={tab === t ? 'active' : ''} onClick={() => setTab(t)}>{pretty(t)}</button>)}</div>
+    <div className="toolbar">
+      <div className="report-range"><input type="date" value={from} max={to} onChange={(e) => e.target.value && setFrom(e.target.value)} aria-label="From date" /><span>to</span><input type="date" value={to} min={from} onChange={(e) => e.target.value && setTo(e.target.value)} aria-label="To date" /></div>
+      <div className="filter-group">
+        <button className={`filter-button ${from === isoShift(6) && to === isoShift(0) ? 'active' : ''}`} onClick={() => setRange(7)}>7 days</button>
+        <button className={`filter-button ${from === isoShift(29) && to === isoShift(0) ? 'active' : ''}`} onClick={() => setRange(30)}>30 days</button>
+        <button className={`filter-button ${from === isoShift(89) && to === isoShift(0) ? 'active' : ''}`} onClick={() => setRange(90)}>90 days</button>
+      </div>
+      <button className="secondary-button" onClick={exportReport} disabled={!report || report.series.length === 0}><FileText size={16} />Export CSV</button>
+    </div>
+    <div className="finance-summary">{kpis.map((k) => <div key={k.label}><span>{k.label}</span><strong>{k.value}</strong><small>{k.hint}</small></div>)}</div>
+    <div className={tab === 'reservations' ? 'report-grid' : ''}>
+      <section className="panel report-chart"><PanelTitle title={meta.title} meta={report ? `${meta.meta} · ${report.date_from} → ${report.date_to}` : meta.meta} />
+        {loading ? <div className="report-loading"><RefreshCw size={16} className="spin" /><span>Crunching the numbers…</span></div> : !report || report.series.length === 0 ? <EmptyState icon={FileText} title={emptyCopy[tab][0]} copy={emptyCopy[tab][1]} /> : <ReportChart tab={tab} report={report} days={days} />}
+      </section>
+      {tab === 'reservations' && <section className="panel report-chart"><PanelTitle title="Status mix" meta="Bookings in range by status" />
+        {mix.length === 0 ? <EmptyState icon={CalendarDays} title="No bookings to break down" copy="Book a reservation to see the status mix." /> : <><div className="donut" style={{ margin: '0 auto', width: 190 }}><ResponsiveContainer width="100%" height={185}><PieChart><Pie data={mix} innerRadius={58} outerRadius={78} paddingAngle={3} dataKey="value" nameKey="label" stroke="none">{mix.map((m, i) => <Cell key={m.label} fill={MIX_COLORS[i % MIX_COLORS.length]} />)}</Pie><Tooltip contentStyle={{ border: '1px solid #d9e2ec', borderRadius: 8 }} /></PieChart></ResponsiveContainer></div><div className="legend">{mix.map((m, i) => <LegendLine key={m.label} color={MIX_COLORS[i % MIX_COLORS.length]} label={m.label} value={m.value} />)}</div></>}
+      </section>}
+    </div>
+  </>
+}
 
 type Setting = { key: string; value: string | null; value_type: string; group_name: string; label: string; editable: boolean; is_public: boolean }
 type AdminUser = { id: string; email: string; username: string; full_name: string; job_title?: string | null; department?: string | null; status: string; is_superuser: boolean; roles: { code: string; name: string; level: number }[]; last_login_at?: string | null }
