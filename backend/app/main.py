@@ -13,7 +13,7 @@ from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.middleware.gzip import GZipMiddleware
 
-from app.api.v1.routers import admin, auth, dashboard, finance, guests, operations, property as property_router, reports, reservations
+from app.api.v1.routers import admin, auth, dashboard, finance, guests, operations, property as property_router, public, reports, reservations
 from app.core.config import settings
 from app.core.errors import error_payload, register_exception_handlers
 from app.core.logging import Timer, configure_logging, request_id_ctx
@@ -108,6 +108,7 @@ def create_app() -> FastAPI:
     app.include_router(operations.router, prefix=prefix)
     app.include_router(reports.router, prefix=prefix)
     app.include_router(admin.router, prefix=prefix)
+    app.include_router(public.router, prefix=prefix)
 
     @app.get("/health", tags=["System"])
     def health():

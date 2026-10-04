@@ -117,3 +117,39 @@
 @keyframes hms-spin { to { transform:rotate(360deg); } }
 .report-grid { display:grid; grid-template-columns:1.55fr 1fr; gap:16px; align-items:stretch; }
 .report-grid .report-chart { min-height:360px; }
+
+/* Visitor homepage: rooms, services, info */
+.visitor-rooms, .visitor-services, .visitor-info { max-width:1280px; margin:0 auto; padding:64px 0 8px; }
+.visitor-section-head { margin-bottom:26px; }
+.visitor-section-head h2, .visitor-info h2 { font-family:'Playfair Display', Georgia, serif; font-size:34px; font-weight:500; letter-spacing:-1px; margin:10px 0 6px; }
+.visitor-section-head p, .visitor-info p { color:#71808b; font-size:13px; margin:0; }
+.visitor-room-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:18px; }
+.visitor-room-card { background:#fff; border:1px solid #e4e8e3; border-radius:12px; padding:20px 20px 16px; display:flex; flex-direction:column; gap:11px; box-shadow:0 2px 10px rgba(16,42,67,.04); }
+.visitor-room-top { display:flex; justify-content:space-between; align-items:baseline; }
+.visitor-room-top strong { font-size:15px; }
+.visitor-room-top span { font-family:'DM Mono', monospace; font-size:9px; letter-spacing:1.4px; color:#9aa89f; background:#f2f5f1; padding:3px 7px; border-radius:4px; }
+.visitor-room-card p { margin:0; color:#6e7d88; font-size:11.5px; line-height:1.6; min-height:52px; }
+.visitor-room-meta { display:flex; gap:14px; color:#5c6c77; font-size:10.5px; }
+.visitor-room-meta span { display:flex; align-items:center; gap:5px; }
+.visitor-amenities { display:flex; flex-wrap:wrap; gap:5px; }
+.visitor-amenities em { font-style:normal; font-size:9.5px; color:#557065; background:#eaf2ee; border-radius:99px; padding:3.5px 9px; }
+.visitor-room-price { display:flex; align-items:baseline; gap:6px; border-top:1px solid #eef1ee; padding-top:12px; margin-top:auto; }
+.visitor-room-price strong { font-size:19px; letter-spacing:-.5px; }
+.visitor-room-price span { color:#93a1a8; font-size:10px; }
+.visitor-service-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:18px; }
+.visitor-service-card { background:#fff; border:1px solid #e4e8e3; border-radius:12px; padding:19px 21px; box-shadow:0 2px 10px rgba(16,42,67,.04); }
+.visitor-service-card header { display:flex; align-items:center; gap:9px; padding-bottom:12px; border-bottom:1px solid #eef1ee; margin-bottom:5px; color:#2c8c7b; }
+.visitor-service-card h3 { font-size:12px; text-transform:uppercase; letter-spacing:1.2px; margin:0; color:var(--navy); }
+.visitor-service-row { display:flex; justify-content:space-between; gap:14px; padding:11px 0; border-bottom:1px dashed #edf0ed; }
+.visitor-service-row:last-child { border-bottom:0; }
+.visitor-service-row strong { display:block; font-size:12px; }
+.visitor-service-row small { color:#93a1a8; font-size:10px; line-height:1.5; display:block; margin-top:3px; max-width:340px; }
+.visitor-service-row span { font-size:12.5px; font-weight:600; white-space:nowrap; }
+.visitor-service-row span i { font-style:normal; color:#9aa89f; font-size:9.5px; font-weight:400; }
+.visitor-info { padding-bottom:56px; }
+.visitor-info-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:16px; margin-top:26px; }
+.visitor-info-grid div { background:#fff; border:1px solid #e4e8e3; border-radius:12px; padding:18px; display:flex; flex-direction:column; gap:6px; }
+.visitor-info-grid svg { color:#2c8c7b; }
+.visitor-info-grid strong { font-size:12px; }
+.visitor-info-grid span { color:#71808b; font-size:11px; line-height:1.5; }
+@media (max-width:900px) { .visitor-room-grid, .visitor-service-grid { grid-template-columns:1fr; } .visitor-info-grid { grid-template-columns:repeat(2,1fr); } }
