@@ -33,6 +33,10 @@ class Settings(BaseSettings):
     # Explicitly disabled by default. The Arena preview enables this to avoid
     # repeated sign-ins while testing seeded workflows; never enable in prod.
     demo_mode: bool = False
+    # Completely bypasses the staff sign-in screen while the platform is being
+    # tested: the frontend auto-opens the seeded development account and the
+    # login form is never shown. Never enable outside an isolated test setup.
+    disable_login: bool = False
     demo_user_email: str = "admin@auroragrand.example"
     demo_user_password: str = "AuroraAdmin!2026"
     timezone: str = "UTC"
@@ -110,6 +114,8 @@ class Settings(BaseSettings):
                 raise ValueError("SameSite=None cookies must be Secure")
             if len(self.secret_key) < 32:
                 raise ValueError("SECRET_KEY must be at least 32 characters in production")
+            if self.disable_login:
+                raise ValueError("DISABLE_LOGIN cannot be enabled in production")
 
 
 @lru_cache

@@ -110,6 +110,8 @@ The staff console is at `http://localhost:5173`. Vite proxies `/api` and `/healt
 
 For an isolated Arena/sandbox preview, run the API with `DEMO_MODE=true`. This keeps the seeded development account available and disables only the test-environment login throttle and lockout; the normal staff login page remains available. The test-only `/api/v1/auth/demo-login` route is disabled by default and rejected in production; do not enable it on a real deployment. For a local HTTP preview, use `COOKIE_SECURE=false` and `COOKIE_SAMESITE=lax`; reserve `COOKIE_SECURE=true` for HTTPS deployments.
 
+To test the platform without any sign-in at all, run the API with `DISABLE_LOGIN=true` (combine with `DEMO_MODE=true`). The frontend reads `/api/v1/auth/config`, never shows the login screen, and opens the seeded development workspace automatically; the sidebar shows a `TEST MODE` badge instead of the sign-out button. The flag is rejected when `ENVIRONMENT=production`.
+
 ### Development seed accounts
 
 These credentials are for local development only. **Change or remove them before deployment.**

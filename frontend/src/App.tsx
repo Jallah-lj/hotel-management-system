@@ -69,17 +69,29 @@ function App() {
   const cachedUser = rememberedUser()
   const location = useLocation()
   const navigate = useNavigate()
-  const shouldRestoreSession = location.pathname !== '/' || Boolean(cachedUser)
+  // Set once the backend confirms whether sign-in is disabled for testing.
+  // `null` means the configuration probe has not answered yet.
+  const [authConfig, setAuthConfig] = useState<{ login_disabled: boolean } | null>(null)
+  const loginDisabled = authConfig?.login_disabled ?? false
+  const shouldRestoreSession = location.pathname !== '/' || Boolean(cachedUser) || loginDisabled
   const [user, setUser] = useState<User | null>(cachedUser)
   const [checking, setChecking] = useState(shouldRestoreSession)
   const [authError, setAuthError] = useState('')
   const bootstrapController = useRef<AbortController | null>(null)
+  useEffect(() => {
+    let active = true
+    api<{ login_disabled: boolean }>('/auth/config')
+      .then((config) => { if (active) setAuthConfig(config) })
+      .catch(() => { if (active) setAuthConfig({ login_disabled: false }) })
+    return () => { active = false }
+  }, [])
   useEffect(() => {
     if (!shouldRestoreSession) return
     const controller = new AbortController()
     let cancelled = false
     bootstrapController.current = controller
     const bootstrap = async () => {
+      setChecking(true)
       if (isPreviewHost()) console.info('[AUTH] restoring session')
       try {
         const verified = await api<User>('/auth/me', { signal: controller.signal })
@@ -98,6 +110,25 @@ function App() {
         if (error instanceof ApiRequestError && error.status === 401) {
           clearSession()
           setUser(null)
+          if (loginDisabled) {
+            // Login is disabled while the platform is being tested: open the
+            // seeded development workspace automatically instead of showing
+            // the sign-in screen.
+            try {
+              if (isPreviewHost()) console.info('[AUTH] login disabled; opening the seeded test workspace')
+              const session = await api<{ user: User }>('/auth/demo-login', { method: 'POST', signal: controller.signal })
+              if (cancelled) return
+              rememberUser(session.user)
+              setUser(session.user)
+              setAuthError('')
+              if (isPreviewHost()) console.info('[AUTH] test workspace opened', { email: session.user.email })
+              if (location.pathname === '/' || location.pathname === '/login') navigate('/dashboard', { replace: true })
+              return
+            } catch (autoError) {
+              if (cancelled || controller.signal.aborted) return
+              setAuthError(autoError instanceof Error ? autoError.message : 'Unable to open the test workspace.')
+            }
+          }
         } else {
           setAuthError(error instanceof Error ? error.message : 'Unable to verify your hotel session.')
         }
@@ -114,7 +145,10 @@ function App() {
       if (bootstrapController.current === controller) bootstrapController.current = null
       window.removeEventListener('hms:unauthorized', logout)
     }
-  }, [shouldRestoreSession])
+    // location/navigate are intentionally not dependencies: the bootstrap must
+    // only re-run when the session strategy changes, not on every navigation.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shouldRestoreSession, loginDisabled])
   const handleLogin = (loggedInUser: User) => {
     // A late unauthenticated bootstrap response must never clear this newly
     // authenticated session.
@@ -134,16 +168,19 @@ function App() {
   }
   if (checking) return <div className="app-loading"><div className="brand-loader"><Hotel size={22} /><span>AURORA GRAND</span></div><span className="spinner dark" /></div>
   if (authError) return <ErrorState message={authError} />
-  if (!user) return location.pathname === '/' ? <VisitorHome onStaffLogin={() => navigate('/login')} /> : <Login onLogin={handleLogin} />
-  return <AppShell user={user} onLogout={handleLogout} />
+  if (!user) {
+    if (authConfig === null || loginDisabled) return <div className="app-loading"><div className="brand-loader"><Hotel size={22} /><span>AURORA GRAND</span></div><span className="muted">Sign-in is disabled — opening the test workspace…</span><span className="spinner dark" /></div>
+    return location.pathname === '/' ? <VisitorHome onStaffLogin={() => navigate('/login')} /> : <Login onLogin={handleLogin} />
+  }
+  return <AppShell user={user} onLogout={handleLogout} testMode={loginDisabled} />
 }
 
-function AppShell({ user, onLogout }: { user: User; onLogout: () => void }) {
+function AppShell({ user, onLogout, testMode = false }: { user: User; onLogout: () => void; testMode?: boolean }) {
   const [sidebar, setSidebar] = useState(true)
   const [mobileOpen, setMobileOpen] = useState(false)
   const location = useLocation()
   const title = location.pathname === '/' || location.pathname === '/dashboard' ? 'Good morning, Avery' : pretty(location.pathname.slice(1).split('/')[0])
-  return <div className={`app-shell ${sidebar ? '' : 'sidebar-collapsed'}`}><aside className={`sidebar ${mobileOpen ? 'mobile-open' : ''}`}><div className="sidebar-top"><div className="brand"><span className="brand-icon"><Hotel size={18} /></span><span className="brand-text">AURORA <b>GRAND</b></span></div><button className="icon-button sidebar-close" onClick={() => setMobileOpen(false)}><X size={18} /></button></div><div className="property-switch"><span className="property-dot" /><div><strong>Aurora Grand Hotel</strong><small>Operations workspace</small></div><ChevronRight size={14} /></div><nav><NavSection label="WORKSPACE" items={primaryNav} onNavigate={() => setMobileOpen(false)} /><NavSection label="OPERATIONS" items={operationsNav} onNavigate={() => setMobileOpen(false)} /><NavSection label="FINANCE" items={financeNav} onNavigate={() => setMobileOpen(false)} /></nav><div className="sidebar-bottom"><NavLink to="/settings" className="nav-item" onClick={() => setMobileOpen(false)}><Settings size={17} /><span>Settings</span></NavLink><div className="user-mini"><div className="avatar">{user.first_name[0]}{user.last_name[0]}</div><div className="user-mini-copy"><strong>{user.full_name}</strong><small>{user.roles[0]?.name ?? 'Staff'}</small></div><button className="icon-button" onClick={onLogout} title="Sign out"><LogOut size={16} /></button></div></div></aside><div className="main-area"><header className="topbar"><div className="topbar-left"><button className="icon-button menu-toggle" onClick={() => setMobileOpen(true)}><Menu size={20} /></button><button className="icon-button collapse-toggle" onClick={() => setSidebar((v) => !v)}><PanelLeftClose size={19} /></button><div className="breadcrumb"><span>Workspace</span><ChevronRight size={14} /><strong>{title}</strong></div></div><div className="topbar-actions"><div className="topbar-date"><CalendarDays size={15} /><span>Monday, Sep 28, 2026</span></div><button className="icon-button notification-button"><Bell size={18} /><i /></button><div className="avatar avatar-top">{user.first_name[0]}{user.last_name[0]}</div></div></header><main className="content"><Routes><Route path="/" element={<DashboardPage />} /><Route path="/dashboard" element={<DashboardPage />} /><Route path="/reservations" element={<ReservationsPage />} /><Route path="/guests" element={<GuestsPage />} /><Route path="/rooms" element={<RoomsPage />} /><Route path="/housekeeping" element={<HousekeepingPage />} /><Route path="/maintenance" element={<MaintenancePage />} /><Route path="/services" element={<ServicesPage />} /><Route path="/finance" element={<FinancePage />} /><Route path="/reports" element={<ReportsPage />} /><Route path="/settings" element={<SettingsPage />} /><Route path="*" element={<DashboardPage />} /></Routes></main></div></div>
+  return <div className={`app-shell ${sidebar ? '' : 'sidebar-collapsed'}`}><aside className={`sidebar ${mobileOpen ? 'mobile-open' : ''}`}><div className="sidebar-top"><div className="brand"><span className="brand-icon"><Hotel size={18} /></span><span className="brand-text">AURORA <b>GRAND</b></span></div><button className="icon-button sidebar-close" onClick={() => setMobileOpen(false)}><X size={18} /></button></div><div className="property-switch"><span className="property-dot" /><div><strong>Aurora Grand Hotel</strong><small>Operations workspace</small></div><ChevronRight size={14} /></div><nav><NavSection label="WORKSPACE" items={primaryNav} onNavigate={() => setMobileOpen(false)} /><NavSection label="OPERATIONS" items={operationsNav} onNavigate={() => setMobileOpen(false)} /><NavSection label="FINANCE" items={financeNav} onNavigate={() => setMobileOpen(false)} /></nav><div className="sidebar-bottom"><NavLink to="/settings" className="nav-item" onClick={() => setMobileOpen(false)}><Settings size={17} /><span>Settings</span></NavLink><div className="user-mini"><div className="avatar">{user.first_name[0]}{user.last_name[0]}</div><div className="user-mini-copy"><strong>{user.full_name}</strong><small>{user.roles[0]?.name ?? 'Staff'}</small></div>{testMode ? <span className="test-mode-chip" title="Login is disabled while the platform is being tested">TEST MODE</span> : <button className="icon-button" onClick={onLogout} title="Sign out"><LogOut size={16} /></button>}</div></div></aside><div className="main-area"><header className="topbar"><div className="topbar-left"><button className="icon-button menu-toggle" onClick={() => setMobileOpen(true)}><Menu size={20} /></button><button className="icon-button collapse-toggle" onClick={() => setSidebar((v) => !v)}><PanelLeftClose size={19} /></button><div className="breadcrumb"><span>Workspace</span><ChevronRight size={14} /><strong>{title}</strong></div></div><div className="topbar-actions"><div className="topbar-date"><CalendarDays size={15} /><span>Monday, Sep 28, 2026</span></div><button className="icon-button notification-button"><Bell size={18} /><i /></button><div className="avatar avatar-top">{user.first_name[0]}{user.last_name[0]}</div></div></header><main className="content"><Routes><Route path="/" element={<DashboardPage />} /><Route path="/dashboard" element={<DashboardPage />} /><Route path="/reservations" element={<ReservationsPage />} /><Route path="/guests" element={<GuestsPage />} /><Route path="/rooms" element={<RoomsPage />} /><Route path="/housekeeping" element={<HousekeepingPage />} /><Route path="/maintenance" element={<MaintenancePage />} /><Route path="/services" element={<ServicesPage />} /><Route path="/finance" element={<FinancePage />} /><Route path="/reports" element={<ReportsPage />} /><Route path="/settings" element={<SettingsPage />} /><Route path="*" element={<DashboardPage />} /></Routes></main></div></div>
 }
 
 function NavSection({ label, items, onNavigate }: { label: string; items: NavItem[]; onNavigate: () => void }) { return <div className="nav-section"><span className="nav-label">{label}</span>{items.map(({ label: itemLabel, icon: Icon, to }) => <NavLink key={to} to={to} className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`} onClick={onNavigate}><Icon size={17} /><span>{itemLabel}</span></NavLink>)}</div> }

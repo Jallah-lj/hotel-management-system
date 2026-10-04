@@ -61,7 +61,7 @@ class CSRFMiddleware(BaseHTTPMiddleware):
     refresh and health are public exceptions.
     """
     async def dispatch(self, request: Request, call_next):
-        if settings.csrf_enabled and request.method in {"POST", "PUT", "PATCH", "DELETE"} and request.url.path not in {"/health", f"{settings.api_v1_prefix}/auth/login", f"{settings.api_v1_prefix}/auth/refresh"}:
+        if settings.csrf_enabled and request.method in {"POST", "PUT", "PATCH", "DELETE"} and request.url.path not in {"/health", f"{settings.api_v1_prefix}/auth/login", f"{settings.api_v1_prefix}/auth/refresh", f"{settings.api_v1_prefix}/auth/demo-login"}:
             cookie_access = request.cookies.get("hms_access") or request.cookies.get(settings.session_cookie_name)
             auth_header = request.headers.get("authorization", "")
             if cookie_access and not auth_header.lower().startswith("bearer "):

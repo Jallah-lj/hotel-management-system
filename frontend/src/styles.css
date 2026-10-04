@@ -41,3 +41,6 @@
 .visitor-features p { color:#7b8b95; font-size:12px; line-height:1.65; margin:0; }
 .visitor-footer { max-width:1280px; margin:0 auto; padding:22px 0 30px; border-top:1px solid #dde5e3; display:flex; justify-content:space-between; color:#8a989f; font-size:10px; letter-spacing:.7px; }
 @media (max-width:780px) { .visitor-home { padding:0 22px; }.visitor-nav { height:70px; }.visitor-hero { min-height:0; display:flex; flex-direction:column; align-items:stretch; gap:35px; padding:54px 0 70px; }.visitor-hero-copy h1 { font-size:58px; }.visitor-hero-card { min-height:330px; }.visitor-hero-card strong { font-size:42px; }.visitor-intro { display:block; padding:58px 0; }.visitor-intro h2 { font-size:32px; margin-bottom:25px; }.visitor-features { grid-template-columns:1fr; padding-bottom:55px; }.visitor-footer { flex-direction:column; gap:8px; } }
+
+.test-mode-chip { flex:0 0 auto; font-size:8px; font-weight:700; letter-spacing:1.2px; color:#5fc4a8; border:1px solid rgba(95,196,168,.45); background:rgba(95,196,168,.12); border-radius:10px; padding:4px 7px; white-space:nowrap; }
+.sidebar-collapsed .test-mode-chip { display:none; }
